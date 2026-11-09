@@ -3861,10 +3861,10 @@ function aiPrompt(kind, request, base, p, withImage, exCount) {
     kind === 'edit' ? 'Reply with only JSON: ' + look + (withImage ? ', plus any of masks, spots, crop, straighten and notes' : '') : 'Reply with only JSON: {"suggestions": [look, look, look]} where each look is ' + look,
   ].filter(Boolean).join('\n\n');
 }
-async function aiSnapshot() {
+async function aiSnapshot(max) {
   try {
     const p = state.cur, g = S().geom, [Wo, Ho] = orientDims(g, p.w, p.h), cw = g.cw * Wo, ch = g.ch * Ho;
-    const s = Math.min(1, 900 / Math.max(cw, ch)), w = Math.max(8, Math.round(cw * s)), hh = Math.max(8, Math.round(ch * s));
+    const s = Math.min(1, (max || 900) / Math.max(cw, ch)), w = Math.max(8, Math.round(cw * s)), hh = Math.max(8, Math.round(ch * s));
     prepSettings();
     const data = Engine.renderSmall(w, hh, cropToSrc(g, p.w, p.h), { cropAR: cw / ch });
     uniformsDirty = true;
@@ -3995,18 +3995,21 @@ async function aiRun(kind) {
   }
   const p = state.cur, base = clone(S());
   AI.ctl = new AbortController();
-  setAIStatus(kind === 'edit' ? via + ' is working on your edit. This can take up to a minute.' : via + ' is looking at your photo. This can take up to a minute.');
+  const working = kind === 'edit' ? via + ' is working on your edit' : via + ' is looking at your photo', t0 = Date.now();
+  setAIStatus(working + '…');
+  AI.tick = setInterval(() => { if (AI.busy && /working on your edit|looking at your photo/.test(aiEls.status.textContent)) setAIStatus(working + '… ' + Math.round((Date.now() - t0) / 1000) + ' s'); }, 1000);
   try {
     const opts = { signal: AI.ctl.signal, cache: false, modelTier: 'default' };
     let withImage = false, exCount = 0;
     if (AI.imagesOK) {
-      const img = await aiSnapshot();
+      const img = await aiSnapshot(sample.model ? 672 : 900);
       const imgs = img ? [img] : [];
       withImage = !!img;
       const ex = AI.examples.slice(0, Math.max(0, (AI.maxImages || 1) - imgs.length)).map((e) => e.blob);
       exCount = ex.length;
       if (imgs.length + ex.length) opts.images = imgs.concat(ex);
     } else if (AI.examples.length) setAIStatus('Example photos need image access, so ' + via + ' is working from your text only.');
+    if (sample.model) opts.kind = kind;
     const res = await sample.json(aiPrompt(kind, request, base, p, withImage, exCount), opts);
     if (state.cur !== p) return;
     const raw = kind === 'edit' ? [res && res.suggestions ? res.suggestions[0] : res] : res && Array.isArray(res.suggestions) ? res.suggestions : Array.isArray(res) ? res : [];
@@ -4023,9 +4026,11 @@ async function aiRun(kind) {
       : code === 'invalid_json' ? 'The answer did not come back in a usable form. Try again.'
       : code === 'sampling_disabled' ? 'Claude is not available on this account right now.'
       : code === 'local_off' ? 'Ollama stopped answering. Make sure it is open, then try again.'
+      : code === 'too_long' ? 'Qwen3-VL kept writing until it ran out of room, twice. Try a shorter request, or press Edit with this again.'
       : code === 'local_error' ? 'Ollama could not run the model' + (e.status ? ' (error ' + e.status + ')' : '') + '. If your Mac is low on memory, close some apps and try again.'
       : 'Something went wrong. Try again.');
   } finally {
+    clearInterval(AI.tick);
     AI.busy = false;
     AI.ctl = null;
     syncAIPanel();
@@ -4040,14 +4045,41 @@ function askConnSet(state, text) {
   row.querySelector('.ask-conn-text').textContent = text;
 }
 /* only on request: a page that reaches into the Mac on load would trip the browser's network prompt */
+/* load the model into memory ahead of time, so the first answer doesn't wait for it */
+function ollamaWarm(model) {
+  if (!model || Date.now() - (AI.warmAt || 0) < 60000) return;
+  AI.warmAt = Date.now();
+  fetch(ollamaBase() + '/api/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model, keep_alive: '15m' }) }).catch(() => {});
+}
 async function askCheck() {
   if (!aiEls.conn || AI.busy) return;
   askConnSet('busy', 'Checking for Ollama…');
   const sm = await localAsk();
-  if (sm) { askConnSet('on', 'Connected: ' + sm.model + ' on your Mac.'); if (aiEls.setup) aiEls.setup.open = false; if (aiEls.offRow) aiEls.offRow.hidden = true; }
+  if (sm) { ollamaWarm(sm.model); askConnSet('on', 'Connected: ' + sm.model + ' on your Mac.'); if (aiEls.setup) aiEls.setup.open = false; if (aiEls.offRow) aiEls.offRow.hidden = true; }
   else { askConnSet('off', AI.why === 'nomodel' ? 'Ollama is open, but it needs the vision model. Do step 2 below.' : 'Not connected. Do the setup steps below once.'); if (aiEls.setup) aiEls.setup.open = true; if (aiEls.offRow) aiEls.offRow.hidden = false; }
 }
 const OLLAMA_MODELS = ['qwen3-vl:8b', 'qwen3-vl', 'qwen2.5vl', 'gemma3', 'llava', 'minicpm-v'];
+/* the answer's shape as a JSON schema: Ollama holds the model to it, with every list and text kept short */
+function askSchema(kind) {
+  const num = { type: 'number' }, arr8 = { type: 'array', items: num, minItems: 8, maxItems: 8 };
+  const v = { type: 'object', properties: {}, additionalProperties: false };
+  for (const k in SC) v.properties[k] = num;
+  const look = { type: 'object', required: ['name', 'summary', 'v'], properties: { name: { type: 'string', maxLength: 40 }, summary: { type: 'string', maxLength: 220 }, v,
+    mixH: arr8, mixS: arr8, mixL: arr8, bw: { type: 'boolean' }, bwMix: arr8, curve: { type: 'array', maxItems: 6, items: { type: 'array', items: num, minItems: 2, maxItems: 2 } } } };
+  if (kind !== 'edit') return { type: 'object', required: ['suggestions'], properties: { suggestions: { type: 'array', items: look, minItems: 3, maxItems: 3 } } };
+  const adj = { type: 'object', properties: {}, additionalProperties: false };
+  for (const k in MASK_ADJ) adj.properties[k] = num;
+  Object.assign(look.properties, {
+    masks: { type: 'array', maxItems: 4, items: { type: 'object', required: ['type', 'adj'], properties: { type: { type: 'string', enum: ['radial', 'linear', 'range'] },
+      x: num, y: num, rx: num, ry: num, feather: num, x0: num, y0: num, x1: num, y1: num, lo: num, hi: num, smooth: num, invert: { type: 'boolean' }, adj } } },
+    spots: { type: 'array', maxItems: 12, items: { type: 'object', required: ['x', 'y', 'r'], properties: { x: num, y: num, r: num } } },
+    crop: { type: 'object', required: ['x0', 'y0', 'x1', 'y1'], properties: { x0: num, y0: num, x1: num, y1: num } },
+    straighten: { anyOf: [num, { type: 'string', enum: ['auto'] }] },
+    lens: { type: 'object', required: ['x', 'y', 'amount'], properties: { x: num, y: num, amount: num, range: num } },
+    notes: { type: 'string', maxLength: 240 },
+  });
+  return look;
+}
 function ollamaBase() { return pref('safelight.ollama', 'http://127.0.0.1:11434').replace(/\/+$/, ''); }
 function blobToDataURL(b) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(new Error('read')); r.readAsDataURL(b); }); }
 function parseLooseJSON(t) {
@@ -4072,22 +4104,39 @@ async function localAsk() {
   let model = '';
   for (const want of OLLAMA_MODELS) { model = names.find((n) => n === want || n.startsWith(want)) || ''; if (model) break; }
   if (!model) { AI.why = 'nomodel'; return null; }
+  AI.localModel = model;
   const fail = (code, extra) => Object.assign(new Error(code), { code }, extra || {});
-  const call = async (input, opts) => {
-    const signal = opts && opts.signal, images = [];
-    for (const b of (opts && opts.images) || []) images.push((await blobToDataURL(b)).split(',')[1]);
+  const post = async (body, signal) => {
     let r;
-    try {
-      r = await fetch(base + '/api/chat', { method: 'POST', signal, headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model, stream: false, format: 'json', options: { temperature: 0.2, num_ctx: 8192 }, messages: [{ role: 'user', content: input, images }] }) });
-    } catch (e) { if (signal && signal.aborted) throw fail('cancelled'); throw fail('local_off'); }
-    if (!r.ok) throw fail('local_error', { status: r.status });
-    const j = await r.json();
-    return { text: String((j && j.message && j.message.content) || ''), model };
+    try { r = await fetch(base + '/api/chat', { method: 'POST', signal, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); }
+    catch (e) { if (signal && signal.aborted) throw fail('cancelled'); throw fail('local_off'); }
+    if (!r.ok) { let t = ''; try { t = await r.text(); } catch (e) { /* no body */ } return { ok: false, status: r.status, text: t }; }
+    return { ok: true, j: await r.json() };
+  };
+  let noThink = false, noSchema = false;
+  /* thinking off, and a strict answer template so the model can't ramble until it runs out of room */
+  const call = async (input, opts) => {
+    const signal = opts && opts.signal, images = [], schema = opts && opts.kind ? askSchema(opts.kind) : null;
+    for (const b of (opts && opts.images) || []) images.push((await blobToDataURL(b)).split(',')[1]);
+    for (let i = 0; i < 3; i++) {
+      const body = { model, stream: false, keep_alive: '15m', format: schema && !noSchema ? schema : 'json',
+        options: { temperature: 0.2, num_ctx: 8192, num_predict: opts && opts.short ? 700 : 1200 }, messages: [{ role: 'user', content: input, images }] };
+      if (!noThink) body.think = false;
+      const res = await post(body, signal);
+      if (res.ok) { const m = (res.j && res.j.message) || {}; return { text: String(m.content || ''), cut: res.j && res.j.done_reason === 'length', model }; }
+      if (res.status === 400 && /think/i.test(res.text) && !noThink) { noThink = true; continue; }
+      if (res.status >= 400 && /format|schema|grammar/i.test(res.text) && !noSchema) { noSchema = true; continue; }
+      throw fail('local_error', { status: res.status });
+    }
+    throw fail('local_error');
   };
   call.json = async (input, opts) => {
-    const v = parseLooseJSON((await call(input, opts)).text);
-    if (v == null || typeof v !== 'object') throw fail('invalid_json');
+    let res = await call(input, opts), v = parseLooseJSON(res.text);
+    if (v == null || typeof v !== 'object') {
+      res = await call(input + '\n\nYour last answer ran too long and was cut off. Answer again with only a short JSON object: a short name, summary and notes, at most 2 masks and 6 spots, and nothing else.', Object.assign({}, opts, { short: true }));
+      v = parseLooseJSON(res.text);
+    }
+    if (v == null || typeof v !== 'object') throw fail(res.cut ? 'too_long' : 'invalid_json');
     return v;
   };
   call.limits = async () => ({ images: { maxCount: 2 } });
@@ -4101,6 +4150,7 @@ function askInstead(prompt) { return ASK_INTENT_RE.test(prompt) && !GEN_INTENT_R
 function buildAIPanel() {
   const ta = h('textarea', { rows: '2', maxlength: '600', 'aria-label': 'Describe the edit you want', placeholder: 'Describe the fix, like: remove the dust spots and brighten her face' });
   ta.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); aiRun('edit'); } });
+  ta.addEventListener('focus', () => { if (!window.claude && AI.localModel) ollamaWarm(AI.localModel); });
   const apply = h('button', { class: 'btn small primary', type: 'button', text: 'Edit with this', onclick: () => aiRun('edit') });
   const suggest = h('button', { class: 'btn small', type: 'button', text: 'Suggest 3 looks', onclick: () => aiRun('suggest') });
   const stop = h('button', { class: 'btn small', type: 'button', text: 'Stop', hidden: true, onclick: () => { if (AI.ctl) AI.ctl.abort(); } });
