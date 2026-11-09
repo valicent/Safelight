@@ -387,6 +387,9 @@ body.tips .pnl-intro, body.tips .tip-only { display: block; }
 }
 .ai-box textarea:focus { outline: none; border-color: var(--accent); }
 .ai-status { min-height: 1.3em; }
+.gen-intent { margin: 8px 0; padding: 8px 10px; border-radius: 8px; background: var(--panel-2); }
+.gen-intent p { margin: 0 0 6px; }
+.gen-intent .hint { margin: 6px 0 0; }
 .ask-conn { display: flex; align-items: center; gap: 8px; margin: 2px 0 8px; padding: 6px 8px; border-radius: 6px; background: var(--panel-2); color: var(--text-2); }
 .ask-conn-text { flex: 1; min-width: 0; }
 .ask-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: var(--text-2); opacity: 0.45; }
@@ -3980,12 +3983,13 @@ async function aiRun(kind) {
   if (!sample) {
     setAIStatus('Looking for Ollama on this Mac…');
     sample = await localAsk();
-    if (sample) { via = 'Qwen3-VL on your Mac'; AI.imagesOK = true; AI.maxImages = 2; askConnSet('on', 'Connected: ' + sample.model + ' on your Mac.'); if (aiEls.setup) aiEls.setup.open = false; }
+    if (sample) { via = 'Qwen3-VL on your Mac'; AI.imagesOK = true; AI.maxImages = 2; askConnSet('on', 'Connected: ' + sample.model + ' on your Mac.'); if (aiEls.setup) aiEls.setup.open = false; if (aiEls.offRow) aiEls.offRow.hidden = true; }
   }
   if (!sample) {
     AI.busy = false; syncAIPanel();
     setAIStatus(AI.why === 'nomodel' ? 'Ollama is open, but it has no vision model yet. Do step 2 of the setup below.' : ASK_OFF);
     if (aiEls.setup) aiEls.setup.open = true;
+    if (aiEls.offRow) aiEls.offRow.hidden = false;
     askConnSet('off', AI.why === 'nomodel' ? 'Ollama is open, but it needs the vision model.' : 'Not connected.');
     return;
   }
@@ -4027,7 +4031,7 @@ async function aiRun(kind) {
     syncAIPanel();
   }
 }
-const ASK_OFF = 'Ollama is not open on this Mac yet, so Ask can’t answer. Follow the setup steps below, then try again.';
+const ASK_OFF = 'Ask needs Ollama, a free Mac app that is separate from the FLUX.2 helper. Set it up once with the steps below, or use Balance and focus, which needs no setup.';
 const ASK_CHIPS = ['Straighten it and crop a little tighter', 'Put the focus on the main subject', 'Brighten the faces', 'Warm, soft film look', 'Remove dust and small spots'];
 function askConnSet(state, text) {
   const row = aiEls.conn;
@@ -4040,8 +4044,8 @@ async function askCheck() {
   if (!aiEls.conn || AI.busy) return;
   askConnSet('busy', 'Checking for Ollama…');
   const sm = await localAsk();
-  if (sm) { askConnSet('on', 'Connected: ' + sm.model + ' on your Mac.'); if (aiEls.setup) aiEls.setup.open = false; }
-  else { askConnSet('off', AI.why === 'nomodel' ? 'Ollama is open, but it needs the vision model. Do step 2 below.' : 'Not connected. Do the setup steps below once.'); if (aiEls.setup) aiEls.setup.open = true; }
+  if (sm) { askConnSet('on', 'Connected: ' + sm.model + ' on your Mac.'); if (aiEls.setup) aiEls.setup.open = false; if (aiEls.offRow) aiEls.offRow.hidden = true; }
+  else { askConnSet('off', AI.why === 'nomodel' ? 'Ollama is open, but it needs the vision model. Do step 2 below.' : 'Not connected. Do the setup steps below once.'); if (aiEls.setup) aiEls.setup.open = true; if (aiEls.offRow) aiEls.offRow.hidden = false; }
 }
 const OLLAMA_MODELS = ['qwen3-vl:8b', 'qwen3-vl', 'qwen2.5vl', 'gemma3', 'llava', 'minicpm-v'];
 function ollamaBase() { return pref('safelight.ollama', 'http://127.0.0.1:11434').replace(/\/+$/, ''); }
@@ -4120,7 +4124,7 @@ function buildAIPanel() {
   const ideas = h('div', { class: 'ai-chips gen-chips', role: 'group', 'aria-label': 'Ideas' },
     ...ASK_CHIPS.map((c) => h('button', { class: 'btn small', type: 'button', text: c, onclick: () => { ta.value = c; ta.focus(); } })));
   const askConn = window.claude ? null : h('div', { class: 'ask-conn', 'data-state': 'idle' },
-    h('span', { class: 'ask-dot', 'aria-hidden': 'true' }), h('span', { class: 'ask-conn-text', text: 'Runs free on your Mac with Ollama.' }),
+    h('span', { class: 'ask-dot', 'aria-hidden': 'true' }), h('span', { class: 'ask-conn-text', text: 'Runs free on your Mac in the Ollama app, separate from the FLUX.2 helper.' }),
     h('button', { class: 'btn small', type: 'button', text: 'Check', onclick: () => askCheck() }));
   aiEls = { ta, apply, suggest, stop, status, prev, next, count, name, desc, notes, changes, chips, results, exThumbs };
   const setup = window.claude ? null : h('details', { class: 'gen-adv' }, h('summary', { text: 'Set up Ask on your Mac (free, once)' }),
@@ -4131,8 +4135,11 @@ function buildAIPanel() {
       h('li', { text: 'Type what you want above and press Edit with this. If the browser asks to connect to devices on your network, allow it.' })));
   aiEls.setup = setup;
   aiEls.conn = askConn;
+  const offRow = h('div', { class: 'btn-row', hidden: true },
+    h('button', { class: 'btn small', type: 'button', text: 'Balance and focus, no setup', title: 'Levels the photo, centers the subject and blurs the background, on this device', onclick: () => quickCompose(setAIStatus) }));
+  aiEls.offRow = offRow;
   aiEls.section = panel(window.claude ? 'Ask Claude' : 'Ask', { cat: 'ask', intro: INTRO.ask }, askConn,
-    h('div', { class: 'ai-box' }, ta, ideas, h('div', { class: 'btn-row' }, apply, suggest, stop), status, results, exBox), setup);
+    h('div', { class: 'ai-box' }, ta, ideas, h('div', { class: 'btn-row' }, apply, suggest, stop), status, offRow, results, exBox), setup);
   return aiEls.section;
 }
 
@@ -6659,18 +6666,13 @@ function genDiscard(quiet) {
   if (!quiet) genStatus('Discarded.');
   syncGen();
 }
-async function genRun() {
+async function genRun(force) {
   const p = state.cur;
   if (!p || !p.history || Gen.busy) return;
+  if (genEls.intent) genEls.intent.hidden = true;
   const prompt = genEls.ta.value.trim();
   if (!prompt) { genStatus('Type what you want to change first.'); genEls.ta.focus(); return; }
-  if (askInstead(prompt)) {
-    aiEls.ta.value = prompt.slice(0, 600);
-    genStatus('Cropping, straightening and focus are exact edits, not repainting, so Ask is doing this one. Its result is in the Ask panel above.');
-    if (aiEls.section) { showEditGroup('ai'); aiEls.section.classList.remove('closed'); aiEls.section.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
-    aiRun('edit');
-    return;
-  }
+  if (force !== true && askInstead(prompt)) { genStatus(''); if (genEls.intent) genEls.intent.hidden = false; return; }
   const token = hfToken();
   if (!token && genEls.engine.value === 'hf') { genStatus('Paste your Hugging Face token below first.'); genEls.token.focus(); return; }
   if (Gen.photo && Gen.photo !== p) genReset(true);
@@ -6730,6 +6732,52 @@ function genAreaOptions() {
     sel.value = opts.some((o) => o[0] === prev) ? prev : 'all';
   }
 }
+function askFromGen(prompt) {
+  aiEls.ta.value = String(prompt || '').slice(0, 600);
+  if (aiEls.section) { showEditGroup('ai'); aiEls.section.classList.remove('closed'); aiEls.section.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+  aiRun('edit');
+}
+/* Balance and focus, all on this device: level it, center the subject left to right, and blur by distance around it */
+const QC = { busy: false };
+async function quickCompose(say) {
+  say = say || genStatus;
+  const p = state.cur;
+  if (!p || !p.history || QC.busy) return;
+  QC.busy = true;
+  say('Finding the subject on this device. The first time, this downloads a 96 MB model.');
+  Pill.set('qc', 'Finding the subject…');
+  try {
+    if (Fills.sync()) sourceChanged();
+    const key = p.id + '|' + Fills.key() + '|subject';
+    let r = AIM.last && AIM.last.key === key ? AIM.last.raster : null;
+    if (!r) { r = await subjectRaster(); AIM.last = { key, raster: r }; }
+    if (state.cur !== p || !p.history) return;
+    let sw = 0, sx = 0, sy = 0;
+    for (let y = 0; y < r.h; y++) {
+      for (let x = 0; x < r.w; x++) { const v = r.data[y * r.w + x] / 255; if (v > 0.5) { sw += v; sx += v * (x + 0.5); sy += v * (y + 0.5); } }
+    }
+    if (sw < r.w * r.h * 0.01) { say('No clear subject was found. Use Crop to frame it and Lens blur to pick the focus.'); return; }
+    const cx = sx / sw / r.w, cy = sy / sw / r.h, base = clone(S()), g0 = base.geom, o = { straighten: 'auto' };
+    const plain = !g0.rot && !g0.fh && !g0.fv && Math.abs(g0.angle) < 0.01 && g0.cw > 0.999 && g0.ch > 0.999, half = Math.min(cx, 1 - cx);
+    if (plain && Math.abs(cx - 0.5) > 0.03 && half >= 0.3) o.crop = { x0: cx - half, y0: 0, x1: cx + half, y1: 1 };
+    const before = g0.angle, g = aiGeom(o, base, p), done = [];
+    if (g) { S().geom = g; if (Math.abs(g.angle - before) >= 0.05) done.push('leveled it by ' + Math.abs(g.angle - before).toFixed(1) + '°'); if (o.crop) done.push('centered the subject'); }
+    S().lens = Object.assign({}, S().lens, { amount: Math.max(S().lens.amount || 0, 45), range: 30, fx: clamp(cx, 0, 1), fy: clamp(cy, 0, 1) });
+    done.push('blurred the background by distance');
+    if (!S().v.vignette) { S().v.vignette = -15; done.push('darkened the corners a little'); }
+    if (typeof syncCropControls === 'function') syncCropControls();
+    syncUI(); markDirty();
+    commitEdit('Balance and focus');
+    say('Done: ' + done.join(', ') + '. Press Command-Z to undo, or fine-tune it in Crop and in Effects, Lens blur.');
+    ensureDepth();
+  } catch (err) {
+    console.error(err);
+    say(err && err.message ? err.message : 'That did not work.');
+  } finally {
+    QC.busy = false;
+    Pill.set('qc', '');
+  }
+}
 async function genAddRefs(files) {
   for (const f of Array.from(files || [])) {
     if (Gen.refs.length >= 2) { toast('Up to two reference photos.'); break; }
@@ -6773,6 +6821,15 @@ function syncGen() {
 function buildGenPanel() {
   const ta = h('textarea', { rows: '3', maxlength: '800', 'aria-label': 'Describe the change', placeholder: 'Describe the change, like: remove the motion blur and make his shoes match image 2' });
   ta.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); genRun(); } });
+  ta.addEventListener('input', () => { if (genEls.intent) genEls.intent.hidden = true; });
+  const intent = h('div', { class: 'gen-intent', hidden: true },
+    h('p', { text: 'This is a crop and focus job. Repainting the whole photo could change faces and the letters on signs, so try one of these instead.' }),
+    h('div', { class: 'btn-row' },
+      h('button', { class: 'btn small primary', type: 'button', text: 'Balance and focus', title: 'Levels the photo, centers the subject and blurs the background, on this device', onclick: () => { intent.hidden = true; quickCompose(genStatus); } }),
+      h('button', { class: 'btn small', type: 'button', text: 'Open Crop', onclick: () => { intent.hidden = true; setTool('crop'); } }),
+      h('button', { class: 'btn small', type: 'button', text: 'Describe it to Ask', onclick: () => { intent.hidden = true; askFromGen(ta.value.trim()); } })),
+    h('p', { class: 'hint' }, 'Balance and focus needs no setup. Ask needs the free Ollama app. ',
+      h('button', { class: 'linkish', type: 'button', text: 'Repaint it anyway', onclick: () => { intent.hidden = true; genRun(true); } })));
   const chips = h('div', { class: 'ai-chips gen-chips', role: 'group', 'aria-label': 'Quick actions' },
     ...GEN_CHIPS.map(([c, kind]) => h('button', { class: 'btn small', type: 'button', text: c, title: kind ? 'Also sets Area to the ' + kind : '', onclick: () => {
       ta.value = ta.value.trim() ? ta.value.trim().replace(/\.?$/, '. ') + c + '.' : c + '.';
@@ -6823,8 +6880,8 @@ function buildGenPanel() {
   const space = h('input', { type: 'text', class: 'gen-token', value: pref('safelight.genSpace', 'Qwen/Qwen-Image-Edit'), spellcheck: 'false', 'aria-label': 'Hugging Face Space' });
   space.addEventListener('change', () => setPref('safelight.genSpace', space.value.trim()));
   const spaceRow = h('div', { class: 'gen-engine-row' },
-    h('div', { class: 'field gen-field' }, h('span', { text: 'Space' }), space),
-    hint('The default is Qwen’s own demo Space, which runs the original Qwen Image Edit on one image at a time, so reference photos need the paid engine or a Space that takes several images. With your token saved, it uses your account’s free daily GPU minutes. A busy or paused Space can fail, so try again later or switch Engine.'));
+    hint('Uses Qwen’s free demo Space with your account’s daily GPU minutes. It takes one photo, so reference photos need the Mac engine. If it’s busy, try again later or switch Engine.'),
+    h('details', { class: 'gen-adv' }, h('summary', { text: 'Space name' }), h('div', { class: 'field gen-field' }, h('span', { text: 'Space' }), space)));
   const iop = h('input', { type: 'text', class: 'gen-token', value: pref('safelight.iopaint', 'http://127.0.0.1:8080'), spellcheck: 'false', 'aria-label': 'IOPaint address' });
   iop.addEventListener('change', () => setPref('safelight.iopaint', iop.value.trim()));
   const iopRow = h('div', { class: 'gen-engine-row' },
@@ -6853,7 +6910,7 @@ function buildGenPanel() {
     markDirty();
   });
   results.prepend(h('div', { class: 'sl gen-strength' }, h('span', { class: 'sl-name', text: 'Strength' }), strength, strengthVal));
-  genEls = { ta, area, model, addRef, refs, sharpen, go, stop, status, prev, next, count, results, token, tokenRow, tokenSaved, engine, modelRow, spaceRow, iopRow, space, iop, strength, strengthVal, mflux: mfx, mfluxRow, mfluxStatus: mfxStatus };
+  genEls = { ta, area, model, addRef, refs, sharpen, go, stop, status, prev, next, count, results, token, tokenRow, tokenSaved, engine, modelRow, spaceRow, iopRow, space, iop, strength, strengthVal, mflux: mfx, mfluxRow, mfluxStatus: mfxStatus, intent };
   syncers.push(syncEngine);
   syncEngine();
   syncers.push(syncGen);
@@ -6866,7 +6923,7 @@ function buildGenPanel() {
         h('div', { class: 'gen-ref-row' }, addRef, refInput, refs),
         hint('In your prompt, the photo is image 1 and references are images 2 and 3, like “make his shoes match image 2”. References need the Mac engine.'),
         h('div', { class: 'row' }, h('label', { class: 'check' }, sharpen, 'Sharpen the result with Upscale (on this device)'))),
-      h('div', { class: 'btn-row' }, go, stop), status, results),
+      h('div', { class: 'btn-row' }, go, stop), status, intent, results),
     hint('Results are repainted, not recovered: faces, hands and lettering can come back slightly different. Use an area mask to limit the change, and Before to compare.'));
 }
 
