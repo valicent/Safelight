@@ -6740,6 +6740,7 @@ async function genRun(force) {
   const p = state.cur;
   if (!p || !p.history || Gen.busy) return;
   if (genEls.intent) genEls.intent.hidden = true;
+  if (genEls.alt) genEls.alt.hidden = true;
   const prompt = genEls.ta.value.trim();
   if (!prompt) { genStatus('Type what you want to change first.'); genEls.ta.focus(); return; }
   if (force !== true && askInstead(prompt)) { genStatus(''); if (genEls.intent) genEls.intent.hidden = false; return; }
@@ -6781,7 +6782,7 @@ async function genRun(force) {
   } catch (err) {
     Gen.busy = false;
     if (err && err.name === 'AbortError') genStatus('Stopped.');
-    else { console.error(err); genStatus(err && err.message ? err.message : 'The edit did not work.'); }
+    else { console.error(err); genStatus(err && err.message ? err.message : 'The edit did not work.'); if (genEls.engine && genEls.engine.value === 'space') offerMac(); }
   } finally {
     Gen.busy = false;
     Gen.ctl = null;
@@ -6801,6 +6802,16 @@ function genAreaOptions() {
     sel.dataset.key = key;
     sel.value = opts.some((o) => o[0] === prev) ? prev : 'all';
   }
+}
+/* when the shared online Space fails, offer the same edit on the Mac helper */
+async function offerMac() {
+  const row = genEls.alt;
+  if (!row) return;
+  const base = ((genEls.mflux && genEls.mflux.value.trim()) || 'http://127.0.0.1:8090').replace(/\/+$/, '');
+  let ok = false;
+  try { const r = await fetch(base + '/health', { cache: 'no-store' }); ok = r.ok && !!(await r.json()).mflux; } catch (e) { /* not running */ }
+  row.querySelector('p').textContent = ok ? 'Your Mac’s FLUX.2 helper is running, and it has no daily limit.' : 'You can also run this on your Mac. Start the FLUX.2 helper in Terminal first.';
+  row.hidden = false;
 }
 function askFromGen(prompt) {
   aiEls.ta.value = String(prompt || '').slice(0, 600);
@@ -6892,6 +6903,10 @@ function buildGenPanel() {
   const ta = h('textarea', { rows: '3', maxlength: '800', 'aria-label': 'Describe the change', placeholder: 'Describe the change, like: remove the motion blur and make his shoes match image 2' });
   ta.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); genRun(); } });
   ta.addEventListener('input', () => { if (genEls.intent) genEls.intent.hidden = true; });
+  const alt = h('div', { class: 'gen-intent', hidden: true }, h('p'),
+    h('div', { class: 'btn-row' }, h('button', { class: 'btn small primary', type: 'button', text: 'Run it on my Mac', onclick: () => {
+      alt.hidden = true; genEls.engine.value = 'mflux'; setPref('safelight.genEngine', 'mflux'); syncEngine(); genRun(true);
+    } })));
   const intent = h('div', { class: 'gen-intent', hidden: true },
     h('p', { text: 'This is a crop and focus job. Repainting the whole photo could change faces and the letters on signs, so try one of these instead.' }),
     h('div', { class: 'btn-row' },
@@ -6902,7 +6917,8 @@ function buildGenPanel() {
       h('button', { class: 'linkish', type: 'button', text: 'Repaint it anyway', onclick: () => { intent.hidden = true; genRun(true); } })));
   const chips = h('div', { class: 'ai-chips gen-chips', role: 'group', 'aria-label': 'Quick actions' },
     ...GEN_CHIPS.map(([c, kind]) => h('button', { class: 'btn small', type: 'button', text: c, title: kind ? 'Also sets Area to the ' + kind : '', onclick: () => {
-      ta.value = ta.value.trim() ? ta.value.trim().replace(/\.?$/, '. ') + c + '.' : c + '.';
+      ta.value = c + '.';
+      if (genEls.intent) genEls.intent.hidden = true;
       ta.focus();
       if (kind) genUseArea(kind);
     } })));
@@ -6980,7 +6996,7 @@ function buildGenPanel() {
     markDirty();
   });
   results.prepend(h('div', { class: 'sl gen-strength' }, h('span', { class: 'sl-name', text: 'Strength' }), strength, strengthVal));
-  genEls = { ta, area, model, addRef, refs, sharpen, go, stop, status, prev, next, count, results, token, tokenRow, tokenSaved, engine, modelRow, spaceRow, iopRow, space, iop, strength, strengthVal, mflux: mfx, mfluxRow, mfluxStatus: mfxStatus, intent };
+  genEls = { ta, area, model, addRef, refs, sharpen, go, stop, status, prev, next, count, results, token, tokenRow, tokenSaved, engine, modelRow, spaceRow, iopRow, space, iop, strength, strengthVal, mflux: mfx, mfluxRow, mfluxStatus: mfxStatus, intent, alt };
   syncers.push(syncEngine);
   syncEngine();
   syncers.push(syncGen);
@@ -6993,7 +7009,7 @@ function buildGenPanel() {
         h('div', { class: 'gen-ref-row' }, addRef, refInput, refs),
         hint('In your prompt, the photo is image 1 and references are images 2 and 3, like “make his shoes match image 2”. References need the Mac engine.'),
         h('div', { class: 'row' }, h('label', { class: 'check' }, sharpen, 'Sharpen the result with Upscale (on this device)'))),
-      h('div', { class: 'btn-row' }, go, stop), status, intent, results),
+      h('div', { class: 'btn-row' }, go, stop), status, intent, alt, results),
     hint('Results are repainted, not recovered: faces, hands and lettering can come back slightly different. Use an area mask to limit the change, and Before to compare.'));
 }
 
