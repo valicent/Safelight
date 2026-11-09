@@ -387,6 +387,12 @@ body.tips .pnl-intro, body.tips .tip-only { display: block; }
 }
 .ai-box textarea:focus { outline: none; border-color: var(--accent); }
 .ai-status { min-height: 1.3em; }
+.in-claude .pnl[data-title^="Generative"], .in-claude .pnl[data-title="AI tools"], .in-claude .pnl[data-title="Lens blur"], .in-claude .mask-ai, .in-claude .ai-mask-status { display: none !important; }
+html:not(.in-claude) .pnl[data-title="More AI tools"] { display: none !important; }
+.ask-claude { margin: 2px 0 10px; padding: 8px 10px; border-radius: 8px; background: var(--accent-soft); }
+.ask-claude p { margin: 0 0 6px; }
+.ask-claude .hint { margin: 6px 0 0; }
+.ask-claude a.btn { display: inline-block; text-decoration: none; }
 .gen-intent { margin: 8px 0; padding: 8px 10px; border-radius: 8px; background: var(--panel-2); }
 .gen-intent p { margin: 0 0 6px; }
 .gen-intent .hint { margin: 6px 0 0; }
@@ -2918,6 +2924,7 @@ function panel(title, opts, ...content) {
     h('h3', { text: title }), reset, h('span', { html: ICON.chev, 'aria-hidden': 'true' }));
   const body = h('div', { class: 'body' }, opts.intro ? h('p', { class: 'pnl-intro', text: opts.intro }) : null, ...content);
   const sec = h('section', { class: 'pnl' + (opts.closed ? ' closed' : '') }, head, body);
+  sec.dataset.title = title;
   if (opts.cat) sec.dataset.cat = opts.cat;
   const toggle = () => {
     const closed = sec.classList.toggle('closed');
@@ -3180,6 +3187,8 @@ function buildEditPanels() {
     ...EDIT_GROUPS.map(([k, l]) => h('button', { type: 'button', 'data-group': k, 'aria-pressed': 'false', text: l, onclick: () => showEditGroup(k) }))));
   root.append(buildAIPanel());
   root.append(buildGenPanel());
+  root.append(panel('More AI tools', { cat: 'ask' },
+    h('p', { class: 'hint', html: 'Generative edit, Remove, Select subject, Lens blur, AI Denoise and Colorize download AI models, which claude.ai doesn’t allow. They work on your own site: <a href="https://valicent.github.io/Safelight/" target="_blank" rel="noopener">valicent.github.io/Safelight</a>. Export this photo and import it there to keep going.' })));
   root.append(panel('AI tools', { cat: 'ask', intro: 'One tap makes a fixed copy next to the original, which stays as it was. All four are free.' }, buildDenoiseRow()));
   const LIGHT = ['exposure', 'contrast', 'highlights', 'shadows', 'whites', 'blacks'];
   root.append(panel('Light', { cat: 'light', intro: INTRO.light, reset: () => resetKeys(LIGHT), changed: () => changedKeys(LIGHT) }, ...LIGHT.map((k) => sv(k))));
@@ -3454,7 +3463,7 @@ function renderMaskEditor() {
 function buildMaskPanel() {
   const add = h('div', { class: 'mask-add' }, ...[['radial', 'Radial'], ['linear', 'Linear'], ['brush', 'Brush'], ['range', 'Luminance']].map(([t, l]) =>
     h('button', { class: 'btn small', type: 'button', text: 'Add ' + l.toLowerCase(), onclick: () => addMask(t) })));
-  const aiAdd = h('div', { class: 'mask-add' }, ...[['subject', 'Select subject'], ['background', 'Select background'], ['sky', 'Select sky'], ['object', 'Select object']].map(([k, l]) =>
+  const aiAdd = h('div', { class: 'mask-add mask-ai' }, ...[['subject', 'Select subject'], ['background', 'Select background'], ['sky', 'Select sky'], ['object', 'Select object']].map(([k, l]) =>
     h('button', { class: 'btn small', type: 'button', text: l, 'data-ai': k, onclick: () => (k === 'object' ? objStart() : addAIMask(k)) })));
   const aiStatus = h('p', { class: 'hint ai-mask-status', 'aria-live': 'polite' });
   const typeIn = h('input', { type: 'text', class: 'gen-token', maxlength: '80', spellcheck: 'false', placeholder: 'Or type what to select, like: the volleyball', 'aria-label': 'What to select' });
@@ -3726,6 +3735,12 @@ function onSettingsReplaced() {
 }
 
 /* ---------- Ask Claude: edits from a prompt, and three suggestions ---------- */
+/* inside claude.ai the page can't reach other sites, so the tools that download models live on the GitHub site */
+const IN_CLAUDE = !!(window.claude && typeof window.claude.use === 'function') || /(^|\.)claudeusercontent\.com$/.test(location.hostname);
+if (IN_CLAUDE) {
+  document.documentElement.classList.add('in-claude');
+  document.querySelectorAll('#exSize option[value="-2"], #exSize option[value="-4"]').forEach((o) => o.remove());
+}
 const AI = { p: null, imagesOK: false, maxImages: 1, ctl: null, busy: false, session: null, examples: [] };
 let aiEls = {};
 const AI_SPEC = [
@@ -3753,7 +3768,7 @@ function aiTools(base) {
     nm ? '- "masks": up to ' + nm + ' masks that change one area. Each has "type" and "adj" (exposure -4..4 in stops; contrast, highlights, shadows, temp, tint, saturation, clarity -100..100), plus optional "invert": true to affect everything outside it. Types: radial {x, y, rx, ry, feather 0..100}, where rx is a fraction of the width and ry of the height; linear {x0, y0, x1, y1}, full effect at the first point and fading out by the second, good for skies and foregrounds; range {lo, hi, smooth}, which selects tones by brightness 0..100.' : '- No more masks can be added to this photo.',
     ns ? '- "spots": up to ' + ns + ' retouch spots that remove small things like dust, blemishes, litter, wires or small distractions by covering them with nearby texture. Each is {x, y, r}, with r a fraction of the width, a little larger than the thing being removed. Use a row of overlapping spots for something long like a wire. Add "mode": "clone" only to copy texture exactly.' : '- No more retouch spots can be added to this photo.',
     '- "crop": {x0, y0, x1, y1} to reframe, and "straighten": degrees to rotate. Positive turns the photo clockwise, so use a negative value when the horizon slopes down to the right. Use "straighten": "auto" whenever the user wants the photo straight, level or at 180 degrees: Safelight then levels it exactly from its lines, which beats guessing degrees.',
-    '- "lens": {x, y, amount, range} blurs the photo by distance like a wide-open lens. Whatever is at x, y stays sharp, along with everything at the same distance. Use it to put the focus on a subject. amount 0..100, where 30 to 60 looks natural; range 0..100 (30) is how much depth stays sharp.',
+    IN_CLAUDE ? '' : '- "lens": {x, y, amount, range} blurs the photo by distance like a wide-open lens. Whatever is at x, y stays sharp, along with everything at the same distance. Use it to put the focus on a subject. amount 0..100, where 30 to 60 looks natural; range 0..100 (30) is how much depth stays sharp.',
     'You cannot paint new content. You cannot replace a sky, add or change objects, change faces or clothing, or rebuild large missing areas. Spots work best on small things, and large objects leave a soft patch. If the request needs something you cannot do, do the closest thing you can and explain it briefly in "notes".',
     'Use only the tools the request needs, and place coordinates carefully on what you see.',
   ].join('\n');
@@ -3903,7 +3918,7 @@ function sanitizeLook(o, ctx) {
       const ms = o.masks.filter((m) => m && typeof m === 'object').map((m) => aiMask(m, ctx.base, ctx.p)).filter(Boolean).slice(0, Math.max(0, 4 - ctx.base.masks.length));
       if (ms.length) tools.masks = ms;
     }
-    if (o.lens && typeof o.lens === 'object') {
+    if (!IN_CLAUDE && o.lens && typeof o.lens === 'object') {
       const [u, v] = AF.ap(cropToSrc(ctx.base.geom, ctx.p.w, ctx.p.h), clamp(aiNum(o.lens.x, 0.5), 0, 1), clamp(aiNum(o.lens.y, 0.5), 0, 1));
       const amount = clamp(aiNum(o.lens.amount, 40), 0, 100);
       if (amount > 0) tools.lens = { amount, range: clamp(aiNum(o.lens.range, 30), 0, 100), fx: clamp(u, 0, 1), fy: clamp(v, 0, 1) };
@@ -3980,14 +3995,15 @@ async function aiRun(kind) {
   syncAIPanel();
   setAIStatus('Connecting…');
   let sample = await (AI.p || Promise.resolve(null)), via = 'Claude';
-  if (!sample) {
+  if (!sample && window.claude && typeof window.claude.use === 'function') { initAI(); sample = await AI.p; }
+  if (!sample && !IN_CLAUDE) {
     setAIStatus('Looking for Ollama on this Mac…');
     sample = await localAsk();
     if (sample) { via = 'Qwen3-VL on your Mac'; AI.imagesOK = true; AI.maxImages = 2; askConnSet('on', 'Connected: ' + sample.model + ' on your Mac.'); if (aiEls.setup) aiEls.setup.open = false; if (aiEls.offRow) aiEls.offRow.hidden = true; }
   }
   if (!sample) {
     AI.busy = false; syncAIPanel();
-    setAIStatus(AI.why === 'nomodel' ? 'Ollama is open, but it has no vision model yet. Do step 2 of the setup below.' : ASK_OFF);
+    setAIStatus(IN_CLAUDE ? 'Claude isn’t available for this page right now. Try again in a moment.' : AI.why === 'nomodel' ? 'Ollama is open, but it has no vision model yet. Do step 2 of the setup below.' : ASK_OFF);
     if (aiEls.setup) aiEls.setup.open = true;
     if (aiEls.offRow) aiEls.offRow.hidden = false;
     askConnSet('off', AI.why === 'nomodel' ? 'Ollama is open, but it needs the vision model.' : 'Not connected.');
@@ -4173,6 +4189,10 @@ function buildAIPanel() {
     h('p', { class: 'hint', text: 'Add photos whose color and mood you like. Ask matches their look, not their subject.' }));
   const ideas = h('div', { class: 'ai-chips gen-chips', role: 'group', 'aria-label': 'Ideas' },
     ...ASK_CHIPS.map((c) => h('button', { class: 'btn small', type: 'button', text: c, onclick: () => { ta.value = c; ta.focus(); } })));
+  const toClaude = window.claude ? null : h('div', { class: 'ask-claude' },
+    h('p', { text: 'Ask Claude is the smartest and fastest option, and it’s free on your Claude plan. It runs in the claude.ai copy of Safelight.' }),
+    h('a', { class: 'btn small primary', href: 'https://claude.ai/artifact/N1s6Jxvotks1uxiQBfKqKU', target: '_blank', rel: 'noopener', text: 'Open Safelight in claude.ai' }),
+    h('p', { class: 'hint', text: 'Import the photo there, use Ask Claude, then Export. Or ask Qwen3-VL on your Mac below.' }));
   const askConn = window.claude ? null : h('div', { class: 'ask-conn', 'data-state': 'idle' },
     h('span', { class: 'ask-dot', 'aria-hidden': 'true' }), h('span', { class: 'ask-conn-text', text: 'Runs free on your Mac in the Ollama app, separate from the FLUX.2 helper.' }),
     h('button', { class: 'btn small', type: 'button', text: 'Check', onclick: () => askCheck() }));
@@ -4188,7 +4208,7 @@ function buildAIPanel() {
   const offRow = h('div', { class: 'btn-row', hidden: true },
     h('button', { class: 'btn small', type: 'button', text: 'Balance and focus, no setup', title: 'Levels the photo, centers the subject and blurs the background, on this device', onclick: () => quickCompose(setAIStatus) }));
   aiEls.offRow = offRow;
-  aiEls.section = panel(window.claude ? 'Ask Claude' : 'Ask', { cat: 'ask', intro: INTRO.ask }, askConn,
+  aiEls.section = panel(window.claude ? 'Ask Claude' : 'Ask', { cat: 'ask', intro: INTRO.ask }, toClaude, askConn,
     h('div', { class: 'ai-box' }, ta, ideas, h('div', { class: 'btn-row' }, apply, suggest, stop), status, offRow, results, exBox), setup);
   return aiEls.section;
 }
@@ -5396,7 +5416,7 @@ function retouchHint() {
   return m === 'remove' ? 'Paint over what you want gone' : m === 'move' ? 'Drag an object to move it' : 'Tap a mark to remove it';
 }
 function buildRetouchPanel() {
-  const modeSeg = segmented([['heal', 'Heal'], ['clone', 'Clone'], ['move', 'Move'], ['remove', 'Remove']], () => state.retouch.mode, (v) => {
+  const modeSeg = segmented([['heal', 'Heal'], ['clone', 'Clone'], ['move', 'Move'], ...(IN_CLAUDE ? [] : [['remove', 'Remove']])], () => state.retouch.mode, (v) => {
     state.retouch.mode = v;
     const q = selSpot();
     if (q && (v === 'heal' || v === 'clone') && q.mode !== v) { q.mode = v; markDirty(); commitEdit(v === 'clone' ? 'Spot set to clone' : 'Spot set to heal'); }
