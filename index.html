@@ -387,6 +387,12 @@ body.tips .pnl-intro, body.tips .tip-only { display: block; }
 }
 .ai-box textarea:focus { outline: none; border-color: var(--accent); }
 .ai-status { min-height: 1.3em; }
+.ask-conn { display: flex; align-items: center; gap: 8px; margin: 2px 0 8px; padding: 6px 8px; border-radius: 6px; background: var(--panel-2); color: var(--text-2); }
+.ask-conn-text { flex: 1; min-width: 0; }
+.ask-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; background: var(--text-2); opacity: 0.45; }
+.ask-conn[data-state="on"] .ask-dot { background: #3aa655; opacity: 1; }
+.ask-conn[data-state="off"] .ask-dot { background: var(--danger); opacity: 1; }
+.ask-conn[data-state="busy"] .ask-dot { background: var(--accent); opacity: 1; }
 .ai-results { margin-top: 6px; padding: 9px 10px; border-radius: 8px; background: var(--panel-2); }
 .ai-nav { display: flex; align-items: center; gap: 4px; }
 .ai-title { flex: 1; min-width: 0; }
@@ -975,7 +981,7 @@ const HELP = {
 };
 const INTRO = {
   retouch: 'Remove dust, blemishes, scratches and whole objects. Heal blends nearby texture into the spot and matches its color. Clone copies texture exactly. Move shifts an object and fills in where it was. Remove rebuilds a painted area with an AI model that runs on this device.',
-  ask: 'Describe what you want in your own words. Ask can change the look, crop and straighten, brighten or darken one area, blur the background by distance, and remove small spots and distractions. It sees a small copy of the photo. On claude.ai it uses Claude; on your own site it uses Qwen3-VL on your Mac through Ollama, which is free. Nothing changes for good until you press Keep.',
+  ask: 'Describe the edit in your own words, or tap an idea. Nothing is saved until you press Keep.',
   light: 'Brightness and contrast. Work top to bottom: set Exposure first, then Contrast, then rescue Highlights and open Shadows. Tap a slider name to learn what it does.',
   curve: 'A finer brightness control. Drag the line up to brighten those tones or down to darken them. A gentle S shape adds contrast.',
   color: 'White balance removes color casts. Vibrance and Saturation set how strong the colors are.',
@@ -3974,12 +3980,13 @@ async function aiRun(kind) {
   if (!sample) {
     setAIStatus('Looking for Ollama on this Mac…');
     sample = await localAsk();
-    if (sample) { via = 'Qwen3-VL on your Mac'; AI.imagesOK = true; AI.maxImages = 2; }
+    if (sample) { via = 'Qwen3-VL on your Mac'; AI.imagesOK = true; AI.maxImages = 2; askConnSet('on', 'Connected: ' + sample.model + ' on your Mac.'); if (aiEls.setup) aiEls.setup.open = false; }
   }
   if (!sample) {
     AI.busy = false; syncAIPanel();
     setAIStatus(AI.why === 'nomodel' ? 'Ollama is open, but it has no vision model yet. Do step 2 of the setup below.' : ASK_OFF);
     if (aiEls.setup) aiEls.setup.open = true;
+    askConnSet('off', AI.why === 'nomodel' ? 'Ollama is open, but it needs the vision model.' : 'Not connected.');
     return;
   }
   const p = state.cur, base = clone(S());
@@ -4021,6 +4028,21 @@ async function aiRun(kind) {
   }
 }
 const ASK_OFF = 'Ollama is not open on this Mac yet, so Ask can’t answer. Follow the setup steps below, then try again.';
+const ASK_CHIPS = ['Straighten it and crop a little tighter', 'Put the focus on the main subject', 'Brighten the faces', 'Warm, soft film look', 'Remove dust and small spots'];
+function askConnSet(state, text) {
+  const row = aiEls.conn;
+  if (!row) return;
+  row.dataset.state = state;
+  row.querySelector('.ask-conn-text').textContent = text;
+}
+/* only on request: a page that reaches into the Mac on load would trip the browser's network prompt */
+async function askCheck() {
+  if (!aiEls.conn || AI.busy) return;
+  askConnSet('busy', 'Checking for Ollama…');
+  const sm = await localAsk();
+  if (sm) { askConnSet('on', 'Connected: ' + sm.model + ' on your Mac.'); if (aiEls.setup) aiEls.setup.open = false; }
+  else { askConnSet('off', AI.why === 'nomodel' ? 'Ollama is open, but it needs the vision model. Do step 2 below.' : 'Not connected. Do the setup steps below once.'); if (aiEls.setup) aiEls.setup.open = true; }
+}
 const OLLAMA_MODELS = ['qwen3-vl:8b', 'qwen3-vl', 'qwen2.5vl', 'gemma3', 'llava', 'minicpm-v'];
 function ollamaBase() { return pref('safelight.ollama', 'http://127.0.0.1:11434').replace(/\/+$/, ''); }
 function blobToDataURL(b) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(new Error('read')); r.readAsDataURL(b); }); }
@@ -4079,7 +4101,6 @@ function buildAIPanel() {
   const suggest = h('button', { class: 'btn small', type: 'button', text: 'Suggest 3 looks', onclick: () => aiRun('suggest') });
   const stop = h('button', { class: 'btn small', type: 'button', text: 'Stop', hidden: true, onclick: () => { if (AI.ctl) AI.ctl.abort(); } });
   const status = h('p', { class: 'hint ai-status', 'aria-live': 'polite' });
-  if (!window.claude) status.textContent = 'On this site, Ask runs Qwen3-VL on your Mac with Ollama, for free. The setup steps are below.';
   const prev = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Previous look', text: '‹', onclick: () => AI.session && aiShow(AI.session.idx - 1) });
   const next = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Next look', text: '›', onclick: () => AI.session && aiShow(AI.session.idx + 1) });
   const count = h('span', { class: 'ai-count' }), name = h('span', { class: 'ai-name' });
@@ -4094,6 +4115,13 @@ function buildAIPanel() {
   const exBtn = h('button', { class: 'btn small', type: 'button', text: 'Add example photos', title: 'Photos whose look you want to copy', onclick: () => exInput.click() });
   const exThumbs = h('div', { class: 'ai-ex' });
   const exRow = h('div', { class: 'ai-ex-row' }, exBtn, exInput, exThumbs);
+  const exBox = h('details', { class: 'gen-adv' }, h('summary', { text: 'Copy the look of example photos' }), exRow,
+    h('p', { class: 'hint', text: 'Add photos whose color and mood you like. Ask matches their look, not their subject.' }));
+  const ideas = h('div', { class: 'ai-chips gen-chips', role: 'group', 'aria-label': 'Ideas' },
+    ...ASK_CHIPS.map((c) => h('button', { class: 'btn small', type: 'button', text: c, onclick: () => { ta.value = c; ta.focus(); } })));
+  const askConn = window.claude ? null : h('div', { class: 'ask-conn', 'data-state': 'idle' },
+    h('span', { class: 'ask-dot', 'aria-hidden': 'true' }), h('span', { class: 'ask-conn-text', text: 'Runs free on your Mac with Ollama.' }),
+    h('button', { class: 'btn small', type: 'button', text: 'Check', onclick: () => askCheck() }));
   aiEls = { ta, apply, suggest, stop, status, prev, next, count, name, desc, notes, changes, chips, results, exThumbs };
   const setup = window.claude ? null : h('details', { class: 'gen-adv' }, h('summary', { text: 'Set up Ask on your Mac (free, once)' }),
     h('ol', { class: 'gen-steps' },
@@ -4102,7 +4130,9 @@ function buildAIPanel() {
       h('li', { html: 'Let this site reach it: run <code>launchctl setenv OLLAMA_ORIGINS "' + location.origin + '"</code>, then quit Ollama from the menu bar and open it again.' }),
       h('li', { text: 'Type what you want above and press Edit with this. If the browser asks to connect to devices on your network, allow it.' })));
   aiEls.setup = setup;
-  aiEls.section = panel(window.claude ? 'Ask Claude' : 'Ask', { cat: 'ask', intro: INTRO.ask }, h('div', { class: 'ai-box' }, ta, exRow, h('div', { class: 'btn-row' }, apply, suggest, stop), status, results), setup);
+  aiEls.conn = askConn;
+  aiEls.section = panel(window.claude ? 'Ask Claude' : 'Ask', { cat: 'ask', intro: INTRO.ask }, askConn,
+    h('div', { class: 'ai-box' }, ta, ideas, h('div', { class: 'btn-row' }, apply, suggest, stop), status, results, exBox), setup);
   return aiEls.section;
 }
 
@@ -4125,7 +4155,7 @@ async function aiAddExamples(list) {
     } catch (e) { setAIStatus(f.name + ' could not be read. In Chrome, iPhone HEIC photos need converting to JPEG first.'); }
   }
   renderExamples();
-  if (AI.examples.length) setAIStatus('Claude will match the look of your example' + (AI.examples.length > 1 ? 's' : '') + '. Add a note if you want, then tap Edit with this or Suggest 3 looks.');
+  if (AI.examples.length) setAIStatus('Ask will match the look of your example' + (AI.examples.length > 1 ? 's' : '') + '. Add a note if you want, then tap Edit with this or Suggest 3 looks.');
 }
 function renderExamples() {
   const box = aiEls.exThumbs;
