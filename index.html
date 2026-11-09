@@ -164,6 +164,8 @@ button, input, select { font: inherit; color: inherit; }
 .linkish { border: 0; background: none; padding: 0; color: var(--accent); text-decoration: underline; cursor: pointer; font: inherit; }
 .obj-row { margin: 4px 0 8px; }
 .dn-row { margin-top: 8px; }
+.gen-engine-row code { font-size: 11px; word-break: break-all; }
+.gen-strength { margin: 6px 0 4px; }
 .t2i { margin-top: 14px; padding-top: 4px; border-top: 1px solid var(--line); }
 .t2i textarea { width: 100%; }
 .vp-msg.work span { background: rgba(0, 0, 0, 0.62); color: #f2f0ec; padding: 7px 14px; border-radius: 999px; font-size: 14px; max-width: 100%; }
@@ -970,7 +972,7 @@ const INTRO = {
   masks: 'A mask limits an edit to part of the photo. Radial covers a spot, Linear a sky or foreground, Brush whatever you paint, and Luminance the bright or dark areas. Select subject, background, sky and object find those areas with an AI model on this device.',
   lens: 'Blurs the background by distance, like a wide-open lens. Pick focus, then tap what should stay sharp.',
   expand: 'Grows the photo to a new shape and fills the new space with an AI model, like Generative Expand. Good for turning a landscape shot into a 4:5 post.',
-  gen: 'Describe a change and an AI model repaints the photo, or just one mask, like Generative Fill. It runs on Hugging Face with your token, so each result uses your credits.',
+  gen: 'Describe a change and an AI model repaints the photo, or just one mask, like Generative Fill. Pick an Engine: paid Hugging Face providers, a free Hugging Face Space, or IOPaint on your Mac.',
 };
 
 function presetFromSettings(name, s) {
@@ -1885,9 +1887,11 @@ void main() {
 const FS_PATCH = `
 uniform sampler2D uTex;
 uniform vec4 uRect;
+uniform float uAmount;
 out vec4 outColor;
 void main() {
   outColor = texture(uTex, (gl_FragCoord.xy - uRect.xy) / uRect.zw);
+  outColor.a *= uAmount;
 }`;
 
 /* ---------- WebGL engine ---------- */
@@ -2075,6 +2079,7 @@ const Engine = (() => {
       gl.viewport(q.x, q.y, q.w, q.h);
       gl.scissor(x0, y0, x1 - x0, y1 - y0);
       gl.uniform4f(U(progs.patch, 'uRect'), q.x, q.y, q.w, q.h);
+      gl.uniform1f(U(progs.patch, 'uAmount'), q.a == null ? 1 : q.a);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       gl.deleteTexture(tex);
     }
@@ -5480,7 +5485,7 @@ const Fills = (() => {
     const p = state.cur;
     if (!p || !p.history || !Engine.hasSource()) return false;
     const list = S().fills || [];
-    const key = p.id + '|' + p.w + 'x' + p.h + '|' + list.map((f) => f.id).join(',');
+    const key = p.id + '|' + p.w + 'x' + p.h + '|' + list.map((f) => f.id + (f.a == null ? '' : ':' + f.a)).join(',');
     if (!force && key === applied) return false;
     const patches = [];
     for (const f of list) {
@@ -5489,7 +5494,7 @@ const Fills = (() => {
         if (!warned) { warned = true; toast('Some removals are no longer saved in this browser.', 3600); }
         continue;
       }
-      patches.push({ x: Math.round(f.x * p.w), y: Math.round(f.y * p.h), w: Math.max(1, Math.round(f.w * p.w)), h: Math.max(1, Math.round(f.h * p.h)), pw: c.w, ph: c.h, data: c.data });
+      patches.push({ x: Math.round(f.x * p.w), y: Math.round(f.y * p.h), w: Math.max(1, Math.round(f.w * p.w)), h: Math.max(1, Math.round(f.h * p.h)), pw: c.w, ph: c.h, data: c.data, a: f.a == null ? 1 : f.a });
     }
     const had = Engine.hasComposite();
     Engine.composite(patches);
@@ -6292,7 +6297,7 @@ async function genRun() {
   const prompt = genEls.ta.value.trim();
   if (!prompt) { genStatus('Type what you want to change first.'); genEls.ta.focus(); return; }
   const token = hfToken();
-  if (!token) { genStatus('Paste your Hugging Face token below first.'); genEls.token.focus(); return; }
+  if (!token && genEls.engine.value === 'hf') { genStatus('Paste your Hugging Face token below first.'); genEls.token.focus(); return; }
   if (Gen.photo && Gen.photo !== p) genReset(true);
   Gen.photo = p;
   Gen.busy = true;
@@ -6306,7 +6311,7 @@ async function genRun() {
     const cw = Math.max(256, Math.round((area.rw * k) / 16) * 16), ch = Math.max(256, Math.round((area.rh * k) / 16) * 16);
     const crop = Engine.renderSmall(cw, ch, [area.rw / p.w, 0, 0, area.rh / p.h, area.rx / p.w, area.ry / p.h], { bypass: true, pre: true });
     const images = [toDataURL(crop, cw, ch, 'image/jpeg', 0.95), ...Gen.refs.map((r) => r.url)];
-    const blob = await falEdit({ model: genEls.model.value, prompt: genPrompt(prompt, Gen.refs.length), images, token, signal: Gen.ctl.signal, onStatus: genStatus });
+    const blob = await editEngine({ prompt: genPrompt(prompt, Gen.refs.length), images, mask: area.mask ? areaMaskURL(area, cw, ch, p) : null, signal: Gen.ctl.signal, onStatus: genStatus });
     if (state.cur !== p || !p.history) return;
     let img = await blobToRGBA(blob, cw, ch), pw = cw, ph = ch;
     const want = area.rw / cw;
@@ -6382,6 +6387,7 @@ function syncGen() {
   genEls.results.hidden = !n || Gen.busy;
   genEls.count.textContent = n ? 'Result ' + (Gen.idx + 1) + ' of ' + n : '';
   genEls.prev.disabled = Gen.idx <= 0;
+  if (genEls.strength && Gen.results[Gen.idx]) { const a = Gen.results[Gen.idx].a; genEls.strength.value = String(Math.round((a == null ? 1 : a) * 100)); genEls.strengthVal.textContent = genEls.strength.value; }
   genEls.next.disabled = Gen.idx >= n - 1;
   genEls.addRef.disabled = Gen.refs.length >= 2;
   const tok = hfToken();
@@ -6425,14 +6431,41 @@ function buildGenPanel() {
     h('div', { class: 'row' }, token, saveTok));
   const tokenSaved = h('p', { class: 'hint', hidden: true }, 'Hugging Face token saved in this browser. ',
     h('button', { class: 'linkish', type: 'button', text: 'Forget it', onclick: () => { setHfToken(''); genStatus('Token removed.'); syncGen(); } }));
-  genEls = { ta, area, model, addRef, refs, sharpen, go, stop, status, prev, next, count, results, token, tokenRow, tokenSaved };
+  const engine = h('select', { class: 'sel', 'aria-label': 'Engine' }, ...ENGINES.map(([v, l]) => h('option', { value: v, text: l })));
+  engine.value = pref('safelight.genEngine', 'hf');
+  engine.addEventListener('change', () => { setPref('safelight.genEngine', engine.value); syncEngine(); });
+  const modelRow = h('div', { class: 'field gen-field' }, h('span', { text: 'Model' }), model);
+  const space = h('input', { type: 'text', class: 'gen-token', value: pref('safelight.genSpace', 'Qwen/Qwen-Image-Edit'), spellcheck: 'false', 'aria-label': 'Hugging Face Space' });
+  space.addEventListener('change', () => setPref('safelight.genSpace', space.value.trim()));
+  const spaceRow = h('div', { class: 'gen-engine-row' },
+    h('div', { class: 'field gen-field' }, h('span', { text: 'Space' }), space),
+    hint('The default is Qwen’s own demo Space, which runs the original Qwen Image Edit on one image at a time, so reference photos need the paid engine or a Space that takes several images. With your token saved, it uses your account’s free daily GPU minutes. A busy or paused Space can fail, so try again later or switch Engine.'));
+  const iop = h('input', { type: 'text', class: 'gen-token', value: pref('safelight.iopaint', 'http://127.0.0.1:8080'), spellcheck: 'false', 'aria-label': 'IOPaint address' });
+  iop.addEventListener('change', () => setPref('safelight.iopaint', iop.value.trim()));
+  const iopRow = h('div', { class: 'gen-engine-row' },
+    h('div', { class: 'field gen-field' }, h('span', { text: 'IOPaint' }), iop),
+    h('p', { class: 'hint', html: 'Free and runs on your Mac, with older models. In Terminal: <code>pip3 install iopaint</code>, then <code>iopaint start --model=Sanster/PowerPaint-V1-stable-diffusion-inpainting --device=mps --port=8080</code>. It repaints the Area mask, so pick one first. Works best from your laptop’s own copy at localhost.' }));
+  const strength = h('input', { type: 'range', min: '0', max: '100', step: '1', value: '100', 'aria-label': 'Strength' });
+  const strengthVal = h('span', { class: 'sl-val', text: '100' });
+  strength.addEventListener('input', () => {
+    const r = Gen.results[Gen.idx];
+    strengthVal.textContent = strength.value;
+    if (!r) return;
+    r.a = +strength.value / 100;
+    markDirty();
+  });
+  results.prepend(h('div', { class: 'sl gen-strength' }, h('span', { class: 'sl-name', text: 'Strength' }), strength, strengthVal));
+  genEls = { ta, area, model, addRef, refs, sharpen, go, stop, status, prev, next, count, results, token, tokenRow, tokenSaved, engine, modelRow, spaceRow, iopRow, space, iop, strength, strengthVal };
+  syncers.push(syncEngine);
+  syncEngine();
   syncers.push(syncGen);
   return panel('Generative edit', { cat: 'ask', intro: INTRO.gen },
     h('div', { class: 'ai-box' }, ta, chips,
       h('div', { class: 'field gen-field' }, h('span', { text: 'Area' }), area),
       h('div', { class: 'gen-ref-row' }, addRef, refInput, refs),
       hint('In your prompt, the photo is image 1 and references are images 2 and 3, like “make his shoes match image 2”.'),
-      h('div', { class: 'field gen-field' }, h('span', { text: 'Model' }), model),
+      h('div', { class: 'field gen-field' }, h('span', { text: 'Engine' }), engine),
+      modelRow, spaceRow, iopRow,
       h('div', { class: 'row' }, h('label', { class: 'check' }, sharpen, 'Sharpen the result with Upscale (on this device)')),
       h('div', { class: 'btn-row' }, go, stop), status, results),
     t2iSection(),
@@ -6768,7 +6801,7 @@ async function expandPhoto() {
   const p = state.cur;
   if (!p || !p.history || XP.busy) return;
   const token = hfToken();
-  if (!token) { syncExpand('Add your Hugging Face token in Generative edit first.'); return; }
+  if (!token && (!genEls.engine || genEls.engine.value === 'hf')) { syncExpand('Add your Hugging Face token in Generative edit first, or pick a free Engine there.'); return; }
   const g = S().geom, odd = g.rot % 2 === 1, dw = odd ? p.h : p.w, dh = odd ? p.w : p.h, tgt = EXPAND_TARGETS.find((x) => x[0] === xpEls.target.value);
   let Wd, Hd;
   if (tgt[0] === 'pad') { Wd = Math.round(dw * 1.5); Hd = Math.round(dh * 1.5); }
@@ -6795,7 +6828,14 @@ async function expandPhoto() {
     ctx.drawImage(src, (ox / W) * cw, (oy / H) * ch, (ow / W) * cw, (oh / H) * ch);
     const extra = xpEls.prompt.value.trim();
     const instruction = 'Fill the flat gray border by extending the photo outward so the scene continues naturally.' + (extra ? ' ' + extra.replace(/\.?$/, '.') : '') + ' Keep the original photo in the middle exactly as it is.';
-    const blob = await falEdit({ model: (genEls.model && genEls.model.value) || GEN_MODELS[0][0], prompt: instruction, images: [c.toDataURL('image/jpeg', 0.95)], token, signal: XP.ctl.signal, onStatus: (s) => syncExpand(s) });
+    const mc = document.createElement('canvas');
+    mc.width = cw; mc.height = ch;
+    const mctx = mc.getContext('2d');
+    mctx.fillStyle = '#fff';
+    mctx.fillRect(0, 0, cw, ch);
+    mctx.fillStyle = '#000';
+    mctx.fillRect((ox / W) * cw + 2, (oy / H) * ch + 2, (ow / W) * cw - 4, (oh / H) * ch - 4);
+    const blob = await editEngine({ prompt: instruction, images: [c.toDataURL('image/jpeg', 0.95)], mask: mc.toDataURL('image/png'), signal: XP.ctl.signal, onStatus: (s) => syncExpand(s) });
     let gen = await blobToRGBA(blob, cw, ch), gw = cw, gh = ch;
     const want = W / cw;
     if (want > 1.3 && navigator.gpu) {
@@ -6833,6 +6873,120 @@ async function expandPhoto() {
     XP.busy = false; XP.ctl = null;
     syncExpand();
   }
+}
+
+/* ---------- engines for Generative edit and expand ---------- */
+const ENGINES = [['hf', 'Hugging Face providers (paid, fastest)'], ['space', 'Free Hugging Face Space (daily GPU minutes)'], ['iopaint', 'IOPaint on your Mac (free)']];
+function pref(k, d) { try { return localStorage.getItem(k) || d; } catch (e) { return d; } }
+function setPref(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* private mode */ } }
+function syncEngine() {
+  if (!genEls.engine) return;
+  const e = genEls.engine.value;
+  genEls.modelRow.hidden = e !== 'hf';
+  genEls.spaceRow.hidden = e !== 'space';
+  genEls.iopRow.hidden = e !== 'iopaint';
+}
+/* the Area mask at the crop's size, white where it should repaint */
+function areaMaskURL(area, cw, ch, p) {
+  const mk = area.mask, px = new Uint8ClampedArray(cw * ch * 4), kx = mk.w / p.w, ky = mk.h / p.h;
+  for (let y = 0; y < ch; y++) {
+    const sy = Math.min(mk.h - 1, Math.floor((area.ry + ((y + 0.5) * area.rh) / ch) * ky));
+    for (let x = 0; x < cw; x++) {
+      const sx = Math.min(mk.w - 1, Math.floor((area.rx + ((x + 0.5) * area.rw) / cw) * kx)), v = mk.data[sy * mk.w + sx] > 0.35 ? 255 : 0, o = (y * cw + x) * 4;
+      px[o] = px[o + 1] = px[o + 2] = v; px[o + 3] = 255;
+    }
+  }
+  return rmCanvas(px, cw, ch).toDataURL('image/png');
+}
+/* a public Gradio Space: read its API, upload the images, call it, read the event stream */
+async function spaceEdit({ space, prompt, images, token, signal, onStatus }) {
+  const sub = 'https://' + space.trim().toLowerCase().replace(/[^a-z0-9/]+/g, '-').replace('/', '-') + '.hf.space';
+  const auth = token ? { Authorization: 'Bearer ' + token } : {};
+  const get = async (url, opts) => {
+    let r;
+    try { r = await fetch(url, Object.assign({ signal }, opts)); }
+    catch (e) { if (signal && signal.aborted) throw e; throw new Error('The Space could not be reached. It may be asleep or paused.'); }
+    if (r.status === 401 || r.status === 403) throw new Error('The Space refused the request. Check the Space name and your token.');
+    if (!r.ok) throw new Error('The Space returned an error (' + r.status + '). It may be asleep, paused or busy.');
+    return r;
+  };
+  onStatus('Connecting to the Space…');
+  const info = await (await get(sub + '/gradio_api/info', { headers: auth })).json();
+  let name = null, params = null;
+  for (const [n, ep] of Object.entries(info.named_endpoints || {})) {
+    const ps = ep.parameters || [];
+    const img = ps.some((q) => /image|gallery/i.test(q.component || '') || /^image/i.test(q.parameter_name || ''));
+    const txt = ps.some((q) => /prompt|instruction/i.test(q.parameter_name || '') && !/negative/i.test(q.parameter_name || ''));
+    if (img && txt) { name = n; params = ps; if (/infer|edit|predict|run|generate/i.test(n)) break; }
+  }
+  if (!name) throw new Error('That Space has no image editing endpoint Safelight can use.');
+  onStatus('Uploading to the Space…');
+  const takesAll = params.some((q) => (q.component || '').toLowerCase() === 'gallery');
+  const cap = takesAll ? images.length : params.filter((q) => (q.component || '').toLowerCase() === 'image' || /^image(_\d)?$/i.test(q.parameter_name || '')).length;
+  const paths = [];
+  for (const u of images.slice(0, Math.max(1, cap))) {
+    const fd = new FormData();
+    fd.append('files', await (await fetch(u)).blob(), 'image.jpg');
+    paths.push((await (await get(sub + '/gradio_api/upload', { method: 'POST', headers: auth, body: fd })).json())[0]);
+  }
+  const file = (pth) => ({ path: pth, meta: { _type: 'gradio.FileData' } });
+  let used = 0;
+  const data = params.map((q) => {
+    const n = (q.parameter_name || '').toLowerCase(), comp = (q.component || '').toLowerCase();
+    if (comp === 'gallery') { const list = paths.slice(used).map((pth) => ({ image: file(pth), caption: null })); used = paths.length; return list; }
+    if (comp === 'image' || /^image(_\d)?$/.test(n)) return used < paths.length ? file(paths[used++]) : null;
+    if (/negative/.test(n)) return q.parameter_has_default ? q.parameter_default : '';
+    if (/prompt|instruction/.test(n) && !/rewrite/.test(n)) return prompt;
+    if (n === 'seed') return 0;
+    if (n === 'randomize_seed') return true;
+    if (/rewrite/.test(n)) return false;
+    return q.parameter_has_default ? q.parameter_default : null;
+  });
+  onStatus('Waiting for a free GPU…');
+  const call = await (await get(sub + '/gradio_api/call' + name, { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, auth), body: JSON.stringify({ data }) })).json();
+  if (!call || !call.event_id) throw new Error('The Space did not accept the request.');
+  onStatus('Generating on the Space…');
+  const text = await (await get(sub + '/gradio_api/call' + name + '/' + call.event_id, { headers: auth })).text();
+  const events = [...text.matchAll(/event:\s*(\w+)\s*\r?\ndata:\s*(.*)/g)].map((m) => [m[1], m[2]]);
+  const bad = events.find((e) => e[0] === 'error');
+  if (bad) {
+    let msg = bad[1];
+    try { msg = JSON.parse(bad[1]); } catch (e) { /* plain text */ }
+    msg = msg == null ? '' : String(msg);
+    throw new Error(/quota/i.test(msg) ? 'Your free GPU minutes for today ran out. They reset within 24 hours, or switch Engine.' : 'The Space reported an error' + (msg && msg !== 'null' ? ': ' + msg.slice(0, 160) : '. It may be paused or busy.'));
+  }
+  const done = events.find((e) => e[0] === 'complete');
+  if (!done) throw new Error('The Space did not finish. It may be paused or busy.');
+  const out = JSON.parse(done[1]), first = Array.isArray(out) ? out[0] : out;
+  const img = Array.isArray(first) ? first[0] && (first[0].image || first[0]) : first;
+  const url = img && (img.url || (img.path ? sub + '/gradio_api/file=' + img.path : null));
+  if (!url) throw new Error('The Space came back without an image.');
+  onStatus('Downloading the result…');
+  return (await get(url, { headers: auth })).blob();
+}
+/* IOPaint's local server repaints the white part of the mask */
+async function iopaintEdit({ base, image, mask, prompt, refs, signal, onStatus }) {
+  if (!mask) throw new Error('IOPaint repaints a masked area. Set Area to a mask first.');
+  onStatus('Sending to IOPaint on your Mac…');
+  const body = { image, mask, prompt, negative_prompt: 'blurry, low quality, distorted, watermark', sd_seed: -1 };
+  if (refs && refs[0]) body.paint_by_example_example_image = refs[0];
+  let r;
+  try { r = await fetch(base.replace(/\/+$/, '') + '/api/v1/inpaint', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal }); }
+  catch (e) { if (signal && signal.aborted) throw e; throw new Error('IOPaint is not reachable at ' + base + '. Start it in Terminal first.'); }
+  if (!r.ok) {
+    let d = '';
+    try { d = (await r.text()).slice(0, 200); } catch (e) { /* no body */ }
+    throw new Error('IOPaint returned an error (' + r.status + ')' + (d ? ': ' + d : '.'));
+  }
+  onStatus('Reading the result…');
+  return r.blob();
+}
+async function editEngine({ prompt, images, mask, signal, onStatus }) {
+  const e = genEls.engine ? genEls.engine.value : 'hf', token = hfToken();
+  if (e === 'iopaint') return iopaintEdit({ base: genEls.iop.value.trim() || 'http://127.0.0.1:8080', image: images[0], mask, prompt, refs: images.slice(1), signal, onStatus });
+  if (e === 'space') return spaceEdit({ space: genEls.space.value.trim() || 'Qwen/Qwen-Image-Edit', prompt, images, token, signal, onStatus });
+  if (!token) throw new Error('Paste your Hugging Face token in Generative edit first.');
+  return falEdit({ model: genEls.model.value, prompt, images, token, signal, onStatus });
 }
 
 /* ---------- auto straighten/* ---------- auto straighten: find the dominant near-level and near-vertical edges ---------- */
