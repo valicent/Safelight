@@ -152,6 +152,19 @@ button, input, select { font: inherit; color: inherit; }
 .vp-msg.work { place-items: end center; padding-bottom: 56px; }
 .gen-field { margin: 8px 0; grid-template-columns: 72px minmax(0, 1fr); }
 .gen-field .sel { width: 100%; min-width: 0; }
+.egroups { display: flex; margin: 10px 12px 6px; }
+.egroups[hidden] { display: none; }
+.egroups button { flex: 1; }
+.pnl.ghide { display: none !important; }
+.gen-steps { margin: 6px 0 6px 18px; padding: 0; color: var(--text-2); }
+.gen-steps li { margin: 4px 0; line-height: 1.4; }
+.gen-steps code { font-size: 11px; word-break: break-all; }
+.gen-adv { margin: 8px 0; }
+.gen-adv > summary { cursor: pointer; color: var(--text-2); margin: 4px 0; }
+.mask-type { margin: 8px 0 2px; }
+.gen-relight .row { gap: 6px; }
+.gen-relight .sel { flex: 1 1 110px; min-width: 0; }
+.gen-relight-name { flex: 0 0 auto; color: var(--text-2); }
 .gen-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
 .gen-chips .btn { white-space: normal; text-align: left; }
 .gen-ref-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 8px 0 4px; }
@@ -551,7 +564,7 @@ body.tips .pnl-intro, body.tips .tip-only { display: block; }
       <section class="side-sec" id="secAbout">
         <h2>About</h2>
         <p class="side-note">A browser darkroom modeled on LightCraft’s develop module. Raw files open through their embedded preview.</p>
-        <p class="side-note">AI features run on this device with open models: LaMa (Apache 2.0) for Remove, BiRefNet (MIT) for Select subject, SegFormer (NVIDIA, non-commercial license) for Select sky, Depth Anything V2 Small (Apache 2.0) for Lens blur, Real-ESRGAN (BSD 3-Clause) for Upscale, SlimSAM (Apache 2.0) for Select object, and NAFNet (MIT) for AI Denoise and Fix motion blur. Each model downloads once, the first time you use it. Generative edit and Generative expand send the area you pick to Qwen Image Edit (Apache 2.0) on Hugging Face, and New image from text uses Z-Image Turbo or Qwen Image (Apache 2.0).</p>
+        <p class="side-note">Everything in Safelight is free. AI features run on this device with open models: LaMa (Apache 2.0) and MI-GAN (MIT) for Remove, BiRefNet (MIT) for Select subject, SegFormer (NVIDIA, non-commercial license) for Select sky, SlimSAM (Apache 2.0) for Select object, Depth Anything V2 Small and Depth Anything 3 Mono Large (Apache 2.0) for Lens blur, Real-ESRGAN (BSD 3-Clause) for Upscale, NAFNet (MIT) for AI Denoise and Fix motion blur, and DDColor (Apache 2.0) for Colorize. Each model downloads once, the first time you use it. Generative edit, Relight and Generative expand use either Qwen’s free demo Space on Hugging Face, within your account’s daily GPU minutes, or FLUX.2 klein 4B (Apache 2.0) on your own Mac. Ask uses Claude on claude.ai and Qwen3-VL (Apache 2.0) through Ollama on your Mac elsewhere. Fix faces uses GFPGAN (Apache 2.0) inside IOPaint on your Mac.</p>
         <p class="side-note" id="saveNote"></p>
         <div class="btn-row"><button class="btn small" id="btnClearLib">Clear saved photos</button></div>
       </section>
@@ -652,6 +665,7 @@ body.tips .pnl-intro, body.tips .tip-only { display: block; }
       <option value="-4">Upscale 4× (AI)</option>
     </select>
   </div>
+  <label class="check ex-label"><input type="checkbox" id="exLabel" checked> Tag AI edits in the file (JPEG)</label>
   <p class="dlg-msg" id="exMsg"></p>
   <div class="dlg-actions">
     <button class="btn" id="exCancel">Cancel</button>
@@ -922,6 +936,7 @@ function presetSummary(p) {
     if (p.tools.geom) out.push('Crop and straighten');
     if (p.tools.masks) out.push(p.tools.masks.length + ' mask' + (p.tools.masks.length > 1 ? 's' : '') + ' (' + p.tools.masks.map((m) => m.name.toLowerCase()).join(', ') + ')');
     if (p.tools.spots) out.push(p.tools.spots.length + ' retouch spot' + (p.tools.spots.length > 1 ? 's' : ''));
+    if (p.tools.lens) out.push('lens blur ' + Math.round(p.tools.lens.amount));
   }
   return out;
 }
@@ -960,7 +975,7 @@ const HELP = {
 };
 const INTRO = {
   retouch: 'Remove dust, blemishes, scratches and whole objects. Heal blends nearby texture into the spot and matches its color. Clone copies texture exactly. Move shifts an object and fills in where it was. Remove rebuilds a painted area with an AI model that runs on this device.',
-  ask: 'Describe what you want in your own words. Claude can change the look, crop and straighten, brighten or darken one area, and remove small spots and distractions. It sees a small copy of the photo. Nothing changes for good until you press Keep.',
+  ask: 'Describe what you want in your own words. Ask can change the look, crop and straighten, brighten or darken one area, blur the background by distance, and remove small spots and distractions. It sees a small copy of the photo. On claude.ai it uses Claude; on your own site it uses Qwen3-VL on your Mac through Ollama, which is free. Nothing changes for good until you press Keep.',
   light: 'Brightness and contrast. Work top to bottom: set Exposure first, then Contrast, then rescue Highlights and open Shadows. Tap a slider name to learn what it does.',
   curve: 'A finer brightness control. Drag the line up to brighten those tones or down to darken them. A gentle S shape adds contrast.',
   color: 'White balance removes color casts. Vibrance and Saturation set how strong the colors are.',
@@ -972,7 +987,7 @@ const INTRO = {
   masks: 'A mask limits an edit to part of the photo. Radial covers a spot, Linear a sky or foreground, Brush whatever you paint, and Luminance the bright or dark areas. Select subject, background, sky and object find those areas with an AI model on this device.',
   lens: 'Blurs the background by distance, like a wide-open lens. Pick focus, then tap what should stay sharp.',
   expand: 'Grows the photo to a new shape and fills the new space with an AI model, like Generative Expand. Good for turning a landscape shot into a 4:5 post.',
-  gen: 'Describe a change and an AI model repaints the photo, or just one mask, like Generative Fill. Pick an Engine: paid Hugging Face providers, a free Hugging Face Space, or IOPaint on your Mac.',
+  gen: 'Describe a change and an AI model repaints the photo, or just one mask, like Generative Fill. Both engines are free: the online Space has a few minutes of GPU time a day, and FLUX.2 klein on your Mac has no limit. Relight changes the light on the whole photo.',
 };
 
 function presetFromSettings(name, s) {
@@ -1014,6 +1029,7 @@ function applyPreset(base, p, amount) {
       }
     }
     if (p.tools.spots) s.spots = (s.spots || []).concat(clone(p.tools.spots.slice(0, Math.max(0, 24 - (s.spots || []).length))));
+    if (p.tools.lens) s.lens = Object.assign({}, s.lens || LENS_DEF, clone(p.tools.lens));
   }
   return s;
 }
@@ -2461,7 +2477,7 @@ const Library = (() => {
       hist = hist.map((e) => ({ label: e.label, json: e.json, key: e.key || null, t: e.t || 0 }));
     }
     return { id: p.id, kind: p.kind, scene: p.scene, name: p.name, raw: !!p.raw, rawOrient: p.rawOrient || 1, rating: p.rating, flag: p.flag,
-      order: p.order || 0, settings: typeof AI !== 'undefined' && AI.session && AI.session.photo === p ? AI.session.base : p.settings, history: hist, hidx, w: p.w, h: p.h, thumb: p.thumbData || null, auto: p.pendingPreset || null, depth: p.depthId || null };
+      order: p.order || 0, settings: typeof AI !== 'undefined' && AI.session && AI.session.photo === p ? AI.session.base : p.settings, history: hist, hidx, w: p.w, h: p.h, thumb: p.thumbData || null, auto: p.pendingPreset || null, depth: p.depthId || null, ai: p.ai || null, depthModel: p.depthModel || null };
   }
   function save(p) {
     if (!p) return;
@@ -2875,6 +2891,17 @@ const hint = (t) => h('p', { class: 'hint', text: t });
 const resetKeys = (keys) => { for (const k of keys) S().v[k] = SC[k].def; };
 const changedKeys = (keys) => keys.some((k) => S().v[k] !== SC[k].def);
 
+const EDIT_GROUPS = [['adjust', 'Adjust'], ['effects', 'Effects'], ['ai', 'AI']];
+const GROUP_OF = { light: 'adjust', curve: 'adjust', color: 'adjust', grade: 'adjust', effects: 'effects', ask: 'ai' };
+function applyEditGroup() {
+  const bar = document.querySelector('#panelsEdit > .egroups');
+  if (!bar) return;
+  const mob = isMobile(), g = EDIT_GROUPS.some(([k]) => k === uiState.egroup) ? uiState.egroup : 'adjust';
+  bar.hidden = mob;
+  bar.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.group === g)));
+  document.querySelectorAll('#panelsEdit > .pnl').forEach((p) => p.classList.toggle('ghide', !mob && (GROUP_OF[p.dataset.cat] || 'adjust') !== g));
+}
+function showEditGroup(g) { saveUI({ egroup: g }); applyEditGroup(); }
 function panel(title, opts, ...content) {
   opts = Object.assign({}, opts, { closed: uiState.panels && title in uiState.panels ? !!uiState.panels[title] : !!opts.closed });
   const reset = opts.reset ? h('button', { class: 'reset', type: 'button', text: 'Reset', title: 'Reset ' + title.toLowerCase() }) : null;
@@ -3140,8 +3167,11 @@ function setBW(on) {
 }
 function buildEditPanels() {
   const root = $('#panelsEdit');
+  root.append(h('div', { class: 'seg egroups', role: 'group', 'aria-label': 'Edit tools' },
+    ...EDIT_GROUPS.map(([k, l]) => h('button', { type: 'button', 'data-group': k, 'aria-pressed': 'false', text: l, onclick: () => showEditGroup(k) }))));
   root.append(buildAIPanel());
   root.append(buildGenPanel());
+  root.append(panel('AI tools', { cat: 'ask', intro: 'One tap makes a fixed copy next to the original, which stays as it was. All four are free.' }, buildDenoiseRow()));
   const LIGHT = ['exposure', 'contrast', 'highlights', 'shadows', 'whites', 'blacks'];
   root.append(panel('Light', { cat: 'light', intro: INTRO.light, reset: () => resetKeys(LIGHT), changed: () => changedKeys(LIGHT) }, ...LIGHT.map((k) => sv(k))));
   root.append(panel('Tone curve', {
@@ -3236,8 +3266,11 @@ function buildEditPanels() {
   const DK = ['sharpen', 'sharpRadius', 'nrLum', 'nrColor'];
   root.append(panel('Detail', { cat: 'effects', intro: INTRO.detail, closed: true, reset: () => resetKeys(DK), changed: () => changedKeys(DK) },
     sub('Sharpening'), sv('sharpen', { hist: 'Sharpening' }), sv('sharpRadius', { hist: 'Sharpening radius' }),
-    sub('Noise reduction'), sv('nrLum', { hist: 'Noise reduction' }), sv('nrColor', { hist: 'Color noise reduction' }), buildDenoiseRow()));
+    sub('Noise reduction'), sv('nrLum', { hist: 'Noise reduction' }), sv('nrColor', { hist: 'Color noise reduction' })));
   root.append(buildLensPanel());
+  applyEditGroup();
+  const lb = $('#learnBox');
+  if (lb) { if (uiState.learnClosed) lb.open = false; lb.addEventListener('toggle', () => saveUI({ learnClosed: !lb.open })); }
 }
 
 /* ---------- crop panel ---------- */
@@ -3415,7 +3448,11 @@ function buildMaskPanel() {
   const aiAdd = h('div', { class: 'mask-add' }, ...[['subject', 'Select subject'], ['background', 'Select background'], ['sky', 'Select sky'], ['object', 'Select object']].map(([k, l]) =>
     h('button', { class: 'btn small', type: 'button', text: l, 'data-ai': k, onclick: () => (k === 'object' ? objStart() : addAIMask(k)) })));
   const aiStatus = h('p', { class: 'hint ai-mask-status', 'aria-live': 'polite' });
-  aiMaskEls = { buttons: aiAdd, status: aiStatus };
+  const typeIn = h('input', { type: 'text', class: 'gen-token', maxlength: '80', spellcheck: 'false', placeholder: 'Or type what to select, like: the volleyball', 'aria-label': 'What to select' });
+  const typeGo = h('button', { class: 'btn small', type: 'button', text: 'Select', onclick: () => addAIMask('text', typeIn.value) });
+  typeIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); typeGo.click(); } });
+  const typeRow = h('div', { class: 'row mask-type' }, typeIn, typeGo);
+  aiMaskEls = { buttons: aiAdd, status: aiStatus, typeIn, typeGo };
   const objSub = h('input', { type: 'checkbox' });
   const objRow = h('div', { class: 'obj-row', hidden: true },
     h('p', { class: 'hint obj-status', 'aria-live': 'polite' }),
@@ -3706,7 +3743,8 @@ function aiTools(base) {
     'Besides the sliders you can use these tools. Coordinates are fractions of the attached photo, with 0,0 at the top left and 1,1 at the bottom right.',
     nm ? '- "masks": up to ' + nm + ' masks that change one area. Each has "type" and "adj" (exposure -4..4 in stops; contrast, highlights, shadows, temp, tint, saturation, clarity -100..100), plus optional "invert": true to affect everything outside it. Types: radial {x, y, rx, ry, feather 0..100}, where rx is a fraction of the width and ry of the height; linear {x0, y0, x1, y1}, full effect at the first point and fading out by the second, good for skies and foregrounds; range {lo, hi, smooth}, which selects tones by brightness 0..100.' : '- No more masks can be added to this photo.',
     ns ? '- "spots": up to ' + ns + ' retouch spots that remove small things like dust, blemishes, litter, wires or small distractions by covering them with nearby texture. Each is {x, y, r}, with r a fraction of the width, a little larger than the thing being removed. Use a row of overlapping spots for something long like a wire. Add "mode": "clone" only to copy texture exactly.' : '- No more retouch spots can be added to this photo.',
-    '- "crop": {x0, y0, x1, y1} to reframe, and "straighten": degrees to rotate. Positive turns the photo clockwise, so use a negative value when the horizon slopes down to the right.',
+    '- "crop": {x0, y0, x1, y1} to reframe, and "straighten": degrees to rotate. Positive turns the photo clockwise, so use a negative value when the horizon slopes down to the right. Use "straighten": "auto" whenever the user wants the photo straight, level or at 180 degrees: Safelight then levels it exactly from its lines, which beats guessing degrees.',
+    '- "lens": {x, y, amount, range} blurs the photo by distance like a wide-open lens. Whatever is at x, y stays sharp, along with everything at the same distance. Use it to put the focus on a subject. amount 0..100, where 30 to 60 looks natural; range 0..100 (30) is how much depth stays sharp.',
     'You cannot paint new content. You cannot replace a sky, add or change objects, change faces or clothing, or rebuild large missing areas. Spots work best on small things, and large objects leave a soft patch. If the request needs something you cannot do, do the closest thing you can and explain it briefly in "notes".',
     'Use only the tools the request needs, and place coordinates carefully on what you see.',
   ].join('\n');
@@ -3757,8 +3795,16 @@ function aiGeom(o, base, p) {
       changed = true;
     }
   }
-  const st = aiNum(o.straighten, 0);
-  if (Math.abs(st) >= 0.1) { g = shrinkToFit({ ...g, angle: clamp(g.angle + clamp(st, -20, 20), -45, 45) }, p.w, p.h); changed = true; }
+  if (o.straighten === 'auto' || o.level === true) {
+    const r = detectTilt();
+    if (r && r.conf >= 2.2) {
+      const flipped = !!g.fh !== !!g.fv, angle = clamp(Math.round(-(flipped ? -r.dev : r.dev) * 10) / 10, -20, 20);
+      if (Math.abs(angle - g.angle) >= 0.05) { g = shrinkToFit({ ...g, angle }, p.w, p.h); changed = true; }
+    }
+  } else {
+    const st = aiNum(o.straighten, 0);
+    if (Math.abs(st) >= 0.1) { g = shrinkToFit({ ...g, angle: clamp(g.angle + clamp(st, -20, 20), -45, 45) }, p.w, p.h); changed = true; }
+  }
   return changed ? g : null;
 }
 function initAI() {
@@ -3848,6 +3894,11 @@ function sanitizeLook(o, ctx) {
       const ms = o.masks.filter((m) => m && typeof m === 'object').map((m) => aiMask(m, ctx.base, ctx.p)).filter(Boolean).slice(0, Math.max(0, 4 - ctx.base.masks.length));
       if (ms.length) tools.masks = ms;
     }
+    if (o.lens && typeof o.lens === 'object') {
+      const [u, v] = AF.ap(cropToSrc(ctx.base.geom, ctx.p.w, ctx.p.h), clamp(aiNum(o.lens.x, 0.5), 0, 1), clamp(aiNum(o.lens.y, 0.5), 0, 1));
+      const amount = clamp(aiNum(o.lens.amount, 40), 0, 100);
+      if (amount > 0) tools.lens = { amount, range: clamp(aiNum(o.lens.range, 30), 0, 100), fx: clamp(u, 0, 1), fy: clamp(v, 0, 1) };
+    }
     if (Array.isArray(o.spots)) {
       const ss = o.spots.filter((q) => q && typeof q === 'object').slice(0, Math.max(0, 24 - (ctx.base.spots || []).length)).map((q) => aiSpot(q, ctx.base, ctx.p));
       if (ss.length) tools.spots = ss;
@@ -3886,6 +3937,7 @@ function aiShow(i) {
   if (!s || state.cur !== s.photo) return;
   s.idx = (i + s.options.length) % s.options.length;
   state.cur.settings = applyPreset(s.base, s.options[s.idx], 1);
+  if (S().lens && S().lens.amount > 0) ensureDepth();
   rebuildBrush();
   renderMaskList();
   syncUI(); markDirty();
@@ -3899,7 +3951,7 @@ function aiKeep() {
   state.preset = { p: look, base: s.base, amount: 100 };
   commitEdit('Suggestion: ' + look.name);
   renderAIResults();
-  setAIStatus('Kept ' + look.name + '.' + (look.tools && (look.tools.masks || look.tools.spots) ? ' Open Masking or Retouch to adjust what Claude added.' : '') + ' Amount in the presets panel dials it back.');
+  setAIStatus('Kept ' + look.name + '.' + (look.tools && (look.tools.masks || look.tools.spots) ? ' Open Masking or Retouch to adjust what Ask added.' : '') + ' Amount in the presets panel dials it back.');
 }
 function aiRevert(silent) {
   const s = AI.session;
@@ -3917,16 +3969,22 @@ async function aiRun(kind) {
   if (AI.session) aiRevert(true);
   AI.busy = true;
   syncAIPanel();
-  setAIStatus('Connecting to Claude…');
-  const sample = await (AI.p || Promise.resolve(null));
+  setAIStatus('Connecting…');
+  let sample = await (AI.p || Promise.resolve(null)), via = 'Claude';
+  if (!sample) {
+    setAIStatus('Looking for Ollama on this Mac…');
+    sample = await localAsk();
+    if (sample) { via = 'Qwen3-VL on your Mac'; AI.imagesOK = true; AI.maxImages = 2; }
+  }
   if (!sample) {
     AI.busy = false; syncAIPanel();
-    setAIStatus(ASK_OFF);
+    setAIStatus(AI.why === 'nomodel' ? 'Ollama is open, but it has no vision model yet. Do step 2 of the setup below.' : ASK_OFF);
+    if (aiEls.setup) aiEls.setup.open = true;
     return;
   }
   const p = state.cur, base = clone(S());
   AI.ctl = new AbortController();
-  setAIStatus(kind === 'edit' ? 'Claude is working on your edit. This can take up to a minute.' : 'Claude is looking at your photo. This can take up to a minute.');
+  setAIStatus(kind === 'edit' ? via + ' is working on your edit. This can take up to a minute.' : via + ' is looking at your photo. This can take up to a minute.');
   try {
     const opts = { signal: AI.ctl.signal, cache: false, modelTier: 'default' };
     let withImage = false, exCount = 0;
@@ -3937,7 +3995,7 @@ async function aiRun(kind) {
       const ex = AI.examples.slice(0, Math.max(0, (AI.maxImages || 1) - imgs.length)).map((e) => e.blob);
       exCount = ex.length;
       if (imgs.length + ex.length) opts.images = imgs.concat(ex);
-    } else if (AI.examples.length) setAIStatus('Example photos need image access, so Claude is working from your text only.');
+    } else if (AI.examples.length) setAIStatus('Example photos need image access, so ' + via + ' is working from your text only.');
     const res = await sample.json(aiPrompt(kind, request, base, p, withImage, exCount), opts);
     if (state.cur !== p) return;
     const raw = kind === 'edit' ? [res && res.suggestions ? res.suggestions[0] : res] : res && Array.isArray(res.suggestions) ? res.suggestions : Array.isArray(res) ? res : [];
@@ -3953,6 +4011,8 @@ async function aiRun(kind) {
       : code === 'rate_limited' ? 'Too many requests right now. Try again in a minute.'
       : code === 'invalid_json' ? 'The answer did not come back in a usable form. Try again.'
       : code === 'sampling_disabled' ? 'Claude is not available on this account right now.'
+      : code === 'local_off' ? 'Ollama stopped answering. Make sure it is open, then try again.'
+      : code === 'local_error' ? 'Ollama could not run the model' + (e.status ? ' (error ' + e.status + ')' : '') + '. If your Mac is low on memory, close some apps and try again.'
       : 'Something went wrong. Try again.');
   } finally {
     AI.busy = false;
@@ -3960,7 +4020,58 @@ async function aiRun(kind) {
     syncAIPanel();
   }
 }
-const ASK_OFF = 'Ask works in the claude.ai version of Safelight. This copy runs on its own site, so it can’t reach Claude.';
+const ASK_OFF = 'Ollama is not open on this Mac yet, so Ask can’t answer. Follow the setup steps below, then try again.';
+const OLLAMA_MODELS = ['qwen3-vl:8b', 'qwen3-vl', 'qwen2.5vl', 'gemma3', 'llava', 'minicpm-v'];
+function ollamaBase() { return pref('safelight.ollama', 'http://127.0.0.1:11434').replace(/\/+$/, ''); }
+function blobToDataURL(b) { return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = () => rej(new Error('read')); r.readAsDataURL(b); }); }
+function parseLooseJSON(t) {
+  t = String(t || '').replace(/<think>[\s\S]*?<\/think>/gi, '').replace(/```(?:json)?/gi, '').trim();
+  try { return JSON.parse(t); } catch (e) { /* find the object inside */ }
+  const a = t.indexOf('{'), b = t.lastIndexOf('}');
+  if (a >= 0 && b > a) { try { return JSON.parse(t.slice(a, b + 1)); } catch (e) { /* not JSON */ } }
+  return null;
+}
+/* the same calls Ask makes to Claude, answered by a vision model on this Mac through Ollama */
+async function localAsk() {
+  const base = ollamaBase();
+  let tags = null;
+  try {
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 3000);
+    const r = await fetch(base + '/api/tags', { signal: ctl.signal });
+    clearTimeout(t);
+    if (r.ok) tags = await r.json();
+  } catch (e) { /* not running */ }
+  if (!tags) { AI.why = 'off'; return null; }
+  const names = (tags.models || []).map((m) => m && (m.name || m.model)).filter(Boolean);
+  let model = '';
+  for (const want of OLLAMA_MODELS) { model = names.find((n) => n === want || n.startsWith(want)) || ''; if (model) break; }
+  if (!model) { AI.why = 'nomodel'; return null; }
+  const fail = (code, extra) => Object.assign(new Error(code), { code }, extra || {});
+  const call = async (input, opts) => {
+    const signal = opts && opts.signal, images = [];
+    for (const b of (opts && opts.images) || []) images.push((await blobToDataURL(b)).split(',')[1]);
+    let r;
+    try {
+      r = await fetch(base + '/api/chat', { method: 'POST', signal, headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, stream: false, format: 'json', options: { temperature: 0.2, num_ctx: 8192 }, messages: [{ role: 'user', content: input, images }] }) });
+    } catch (e) { if (signal && signal.aborted) throw fail('cancelled'); throw fail('local_off'); }
+    if (!r.ok) throw fail('local_error', { status: r.status });
+    const j = await r.json();
+    return { text: String((j && j.message && j.message.content) || ''), model };
+  };
+  call.json = async (input, opts) => {
+    const v = parseLooseJSON((await call(input, opts)).text);
+    if (v == null || typeof v !== 'object') throw fail('invalid_json');
+    return v;
+  };
+  call.limits = async () => ({ images: { maxCount: 2 } });
+  call.model = model;
+  return call;
+}
+/* crop, straighten and focus requests typed into Generative edit go to Ask, which does them exactly */
+const ASK_INTENT_RE = /\b(crop|crops|cropped|cropping|straighten|straight|level|tilt|tilted|rotate|horizon|reframe|framing|180|focus)\b/i;
+const GEN_INTENT_RE = /\b(replace|remove|erase|delete|add|insert|swap|paint|generate|turn\b.*\binto|make (him|her|them|it) (wear|hold|look like)|fix the (hands|face|eyes|shoes|feet))\b/i;
+function askInstead(prompt) { return ASK_INTENT_RE.test(prompt) && !GEN_INTENT_RE.test(prompt) && !!aiEls.ta; }
 function buildAIPanel() {
   const ta = h('textarea', { rows: '2', maxlength: '600', 'aria-label': 'Describe the edit you want', placeholder: 'Describe the fix, like: remove the dust spots and brighten her face' });
   ta.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); aiRun('edit'); } });
@@ -3968,7 +4079,7 @@ function buildAIPanel() {
   const suggest = h('button', { class: 'btn small', type: 'button', text: 'Suggest 3 looks', onclick: () => aiRun('suggest') });
   const stop = h('button', { class: 'btn small', type: 'button', text: 'Stop', hidden: true, onclick: () => { if (AI.ctl) AI.ctl.abort(); } });
   const status = h('p', { class: 'hint ai-status', 'aria-live': 'polite' });
-  if (!window.claude) status.textContent = ASK_OFF;
+  if (!window.claude) status.textContent = 'On this site, Ask runs Qwen3-VL on your Mac with Ollama, for free. The setup steps are below.';
   const prev = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Previous look', text: '‹', onclick: () => AI.session && aiShow(AI.session.idx - 1) });
   const next = h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Next look', text: '›', onclick: () => AI.session && aiShow(AI.session.idx + 1) });
   const count = h('span', { class: 'ai-count' }), name = h('span', { class: 'ai-name' });
@@ -3984,7 +4095,15 @@ function buildAIPanel() {
   const exThumbs = h('div', { class: 'ai-ex' });
   const exRow = h('div', { class: 'ai-ex-row' }, exBtn, exInput, exThumbs);
   aiEls = { ta, apply, suggest, stop, status, prev, next, count, name, desc, notes, changes, chips, results, exThumbs };
-  return panel('Ask Claude', { cat: 'ask', intro: INTRO.ask }, h('div', { class: 'ai-box' }, ta, exRow, h('div', { class: 'btn-row' }, apply, suggest, stop), status, results));
+  const setup = window.claude ? null : h('details', { class: 'gen-adv' }, h('summary', { text: 'Set up Ask on your Mac (free, once)' }),
+    h('ol', { class: 'gen-steps' },
+      h('li', { html: 'Install Ollama from <a href="https://ollama.com/download" target="_blank" rel="noopener">ollama.com/download</a> and open it.' }),
+      h('li', { html: 'In Terminal, run <code>ollama pull qwen3-vl:8b</code>. It downloads about 6 GB.' }),
+      h('li', { html: 'Let this site reach it: run <code>launchctl setenv OLLAMA_ORIGINS "' + location.origin + '"</code>, then quit Ollama from the menu bar and open it again.' }),
+      h('li', { text: 'Type what you want above and press Edit with this. If the browser asks to connect to devices on your network, allow it.' })));
+  aiEls.setup = setup;
+  aiEls.section = panel(window.claude ? 'Ask Claude' : 'Ask', { cat: 'ask', intro: INTRO.ask }, h('div', { class: 'ai-box' }, ta, exRow, h('div', { class: 'btn-row' }, apply, suggest, stop), status, results), setup);
+  return aiEls.section;
 }
 
 async function aiAddExamples(list) {
@@ -4595,6 +4714,7 @@ function applyMobile() {
   const bar = $('#mtabs'), on = bar.querySelector('button[aria-pressed="true"]');
   if (mob && on && (on.offsetLeft < bar.scrollLeft || on.offsetLeft + on.offsetWidth > bar.scrollLeft + bar.clientWidth)) bar.scrollLeft = on.offsetLeft - 8;
   if (mob) saveUI({ mcat: mcat === 'crop' || mcat === 'masks' || mcat === 'retouch' ? 'light' : mcat, sheetOpen });
+  applyEditGroup();
   requestRender();
 }
 mq.addEventListener('change', applyMobile);
@@ -4623,6 +4743,7 @@ function reveal(el, cat) {
   if (isMobile()) { if (cat) { mcat = cat; sheetOpen = true; applyMobile(); } }
   else {
     const pnl = el.closest('.pnl');
+    if (pnl && pnl.classList.contains('ghide')) showEditGroup(GROUP_OF[pnl.dataset.cat] || 'adjust');
     if (pnl && pnl.classList.contains('closed')) { pnl.classList.remove('closed'); const hd = pnl.querySelector('header'); if (hd) hd.setAttribute('aria-expanded', 'true'); }
     const left = $('#left');
     if (el.closest('.left') && getComputedStyle(left).position === 'absolute') { left.classList.add('open'); $('#btnPresets').setAttribute('aria-pressed', 'true'); }
@@ -4909,8 +5030,10 @@ async function runExport() {
     cv.width = w; cv.height = hgt;
     cv.getContext('2d').putImageData(new ImageData(px, w, hgt), 0, 0);
     const mime = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp' }[fmt];
-    const blob = await new Promise((res) => cv.toBlob(res, mime, exportQ / 100));
+    let blob = await new Promise((res) => cv.toBlob(res, mime, exportQ / 100));
     if (!blob) throw new Error('The browser could not encode this format.');
+    const tag = aiUsed(p);
+    if (tag && blob.type === 'image/jpeg' && $('#exLabel') && $('#exLabel').checked) { try { blob = await jpegWithXmp(blob, tag); } catch (e) { console.warn('AI tag skipped', e); } }
     let ext = fmt;
     if (blob.type && blob.type !== mime) ext = blob.type === 'image/png' ? 'png' : blob.type === 'image/jpeg' ? 'jpg' : ext;
     const base = ($('#exName').value || '').replace(/[\\/:*?"<>|]+/g, '').trim() || 'photo';
@@ -4935,6 +5058,28 @@ async function runExport() {
   }
 }
 
+function aiUsed(p) {
+  if (!p) return '';
+  if (p.ai === 'generated') return 'generated';
+  if (p.ai) return p.ai;
+  return ((p.settings && p.settings.fills) || []).length ? 'composite' : '';
+}
+/* an XMP packet in its own APP1 segment, right after the JFIF header */
+async function jpegWithXmp(blob, kind) {
+  const u8 = new Uint8Array(await blob.arrayBuffer());
+  if (u8[0] !== 0xff || u8[1] !== 0xd8) return blob;
+  const type = kind === 'generated' ? 'trainedAlgorithmicMedia' : 'compositeWithTrainedAlgorithmicMedia';
+  const xmp = '<?xpacket begin="\ufeff" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
+    + '<rdf:Description rdf:about="" xmlns:Iptc4xmpExt="http://iptc.org/std/Iptc4xmpExt/2008-02-29/" xmlns:xmp="http://ns.adobe.com/xap/1.0/" '
+    + 'Iptc4xmpExt:DigitalSourceType="http://cv.iptc.org/newscodes/digitalsourcetype/' + type + '" xmp:CreatorTool="Safelight"/></rdf:RDF></x:xmpmeta><?xpacket end="w"?>';
+  const enc = new TextEncoder(), head = enc.encode('http://ns.adobe.com/xap/1.0/\u0000'), body = enc.encode(xmp), len = 2 + head.length + body.length;
+  let at = 2;
+  while (at + 4 <= u8.length && u8[at] === 0xff && u8[at + 1] === 0xe0) at += 2 + ((u8[at + 2] << 8) | u8[at + 3]);
+  const seg = new Uint8Array(2 + len);
+  seg[0] = 0xff; seg[1] = 0xe1; seg[2] = len >> 8; seg[3] = len & 255;
+  seg.set(head, 4); seg.set(body, 4 + head.length);
+  return new Blob([u8.subarray(0, at), seg, u8.subarray(at)], { type: 'image/jpeg' });
+}
 let pendingSave = null;
 async function saveLocal(blob, filename, gesture) {
   const file = new File([blob], filename, { type: blob.type || 'application/octet-stream' });
@@ -5170,7 +5315,7 @@ function buildRetouchPanel() {
     if (q && (v === 'heal' || v === 'clone') && q.mode !== v) { q.mode = v; markDirty(); commitEdit(v === 'clone' ? 'Spot set to clone' : 'Spot set to heal'); }
     if (v === 'move' || v === 'remove') state.spotSel = -1;
     if (state.tool === 'retouch') $('#metaHint').textContent = retouchHint();
-    if (v === 'remove') Lama.isCached().then((c) => { Remover.cached = c; syncRemove(); });
+    if (v === 'remove') Hub.isCached(removeKey()).then((c) => { Remover.cached = c; syncRemove(); });
     syncRetouch();
   }, 'Retouch mode');
   const sizeFromR = (r) => clamp(Math.round(100 * Math.pow(Math.max(0, r - 0.004) / 0.12, 1 / 1.5)), 1, 100);
@@ -5190,14 +5335,18 @@ function buildRetouchPanel() {
   } });
   const count = h('p', { class: 'hint' });
   const rmStatus = h('p', { class: 'hint rm-status', 'aria-live': 'polite' });
-  const rmGet = h('button', { class: 'btn small', type: 'button', text: 'Download the model now', onclick: () => { Lama.ensure().catch(() => {}); } });
+  const rmGet = h('button', { class: 'btn small', type: 'button', text: 'Download the model now', onclick: () => { Hub.session(removeKey()).catch(() => {}); } });
   const rmClear = h('button', { class: 'btn small', type: 'button', text: 'Clear all removals', onclick: () => {
     if (!(S().fills || []).length || Remover.busy) return;
     S().fills = [];
     markDirty(); syncRetouch(); commitEdit('Clear removals');
   } });
   const rmCount = h('p', { class: 'hint' });
-  rmEls = { status: rmStatus, get: rmGet, clear: rmClear, count: rmCount };
+  const rmQual = h('select', { class: 'sel', 'aria-label': 'Removal quality' }, ...[['auto', 'Auto'], ['fast', 'Fast: MI-GAN, 27 MB'], ['best', 'Best: LaMa, 37 MB']].map(([v, l]) => h('option', { value: v, text: l })));
+  rmQual.value = pref('safelight.removeModel', 'auto');
+  rmQual.addEventListener('change', () => { setPref('safelight.removeModel', rmQual.value); Remover.cached = false; Hub.isCached(removeKey()).then((c) => { Remover.cached = c; syncRemove(); }); syncRemove(); });
+  const rmQualRow = h('div', { class: 'field gen-field' }, h('span', { text: 'Quality' }), rmQual);
+  rmEls = { status: rmStatus, get: rmGet, clear: rmClear, count: rmCount, qual: rmQual };
   const spotBox = h('div', { class: 'rt-spots' },
     sel('feather', 'Feather', 'How softly the spot blends into its surroundings.', (q, v) => { q.feather = v / 100; }, (q) => Math.round(q.feather * 100)),
     sel('opacity', 'Opacity', 'How strongly the fix covers the original. Lower it to soften a blemish instead of erasing it.', (q, v) => { q.opacity = v / 100; }, (q) => Math.round(q.opacity * 100)),
@@ -5207,12 +5356,13 @@ function buildRetouchPanel() {
     hint('Heal: tap a mark, or press and drag to size the spot. Clone copies texture exactly. Move: drag from an object to where you want it. Drag a dashed circle to pick a different source.'),
     hint('To brighten, darken or recolor one area instead, use Masking.'));
   const removeBox = h('div', { class: 'rt-remove', hidden: true },
+    rmQualRow,
     rmStatus,
     h('div', { class: 'btn-row' }, rmGet, rmClear),
     rmCount,
     hint('Paint over a person, sign, car or anything else you want gone, and cover its shadow too. It works best when the area around it is simple, like sky, grass, sand or a wall.'),
     hint('The model runs on this device. Your photo is never uploaded.'),
-    hint('Model: LaMa by Suvorov et al., trained on Places2, Apache 2.0 license.'));
+    hint('Auto uses LaMa when this device has WebGPU and the faster MI-GAN on phones and other browsers. Models: LaMa by Suvorov et al. (Apache 2.0) and MI-GAN by Picsart AI Research (MIT).'));
   syncers.push(() => {
     del.disabled = !selSpot();
     const n = (S().spots || []).length;
@@ -5222,8 +5372,8 @@ function buildRetouchPanel() {
     removeBox.hidden = !rm;
     syncRemove();
   });
-  Lama.on(() => syncRemove());
-  Lama.isCached().then((c) => { Remover.cached = c; syncRemove(); });
+  Hub.on((k) => { if (k === 'lama' || k === 'migan') syncRemove(); });
+  Hub.isCached(removeKey()).then((c) => { Remover.cached = c; syncRemove(); });
   $('#panelsRetouch').append(panel('Retouch', { intro: INTRO.retouch },
     h('div', { class: 'row' }, modeSeg),
     sel('size', 'Size', 'How big the spot or brush is. You can also press and drag on the photo to size a new spot.', (q, v) => { q.r = spotR(v); }, (q) => sizeFromR(q.r)),
@@ -5258,6 +5408,14 @@ const MODELS = {
   deblur: { name: 'motion blur model', mb: 76, gpuOnly: true,
     sha: '9e3e1699ffddf39a17a9572ef7da7030da6b96827f681b60e59c041a5523d6e3',
     urls: ['https://huggingface.co/mlboydaisuke/NAFNet-GoPro-width32-OpenVINO/resolve/main/nafnet_fp16.onnx'] },
+  migan: { name: 'fast removal model', mb: 27,
+    urls: ['https://huggingface.co/andraniksargsyan/migan/resolve/406830d0fa60666da0071c342ad2fbc8f30c5c64/migan_pipeline_v2.onnx',
+      'https://huggingface.co/CardAnvilModels/MI-GAN-ONNX/resolve/main/migan_pipeline_v2.onnx',
+      'https://huggingface.co/edgetools/migan/resolve/main/migan_pipeline_v2.onnx'] },
+  depth3: { name: 'Best depth model', mb: 336, gpuOnly: true,
+    urls: ['https://huggingface.co/Jens-Duttke/Depth-Anything-3-MONO-ONNX/resolve/main/da-v3-mono-large_q4f16_opset21_optimized.onnx'] },
+  colorize: { name: 'colorize model', mb: 130, gpuOnly: true,
+    urls: ['https://huggingface.co/edgetools/ddcolor/resolve/main/ddcolor-tiny-fp16.onnx'] },
 };
 const Hub = (() => {
   const st = {}, subs = new Set();
@@ -5512,10 +5670,54 @@ function sourceChanged() {
   scheduleHist();
 }
 
-const Remover = { busy: false, stroke: null, cached: false, msg: '' };
+const Remover = { busy: false, stroke: null, cached: false, msg: '', key: '' };
+const IS_MOBILE = /Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+/* Remove quality: Best is LaMa, Fast is MI-GAN; Auto takes LaMa where WebGPU makes it quick and MI-GAN everywhere else */
+function removeKey() {
+  const q = pref('safelight.removeModel', 'auto');
+  if (q === 'best') return 'lama';
+  if (q === 'fast') return 'migan';
+  return navigator.gpu && !IS_MOBILE ? 'lama' : 'migan';
+}
+/* MI-GAN's ONNX pipeline crops around the hole, fills it at 512 and pastes it back itself; its mask is 255 where pixels are kept */
+async function miganFill(crop, hole, cw, ch) {
+  const N = cw * ch, img = new Uint8Array(3 * N), mk = new Uint8Array(N);
+  for (let i = 0; i < N; i++) { img[i] = crop[i * 4]; img[N + i] = crop[i * 4 + 1]; img[2 * N + i] = crop[i * 4 + 2]; mk[i] = hole[i] ? 0 : 255; }
+  const { out, sess } = await Hub.run('migan', (sn) => {
+    const mn = sn.inputNames.find((n) => /mask/i.test(n)) || sn.inputNames[1], im = sn.inputNames.find((n) => n !== mn) || sn.inputNames[0];
+    return { [im]: new ort.Tensor('uint8', img, [1, 3, ch, cw]), [mn]: new ort.Tensor('uint8', mk, [1, 1, ch, cw]) };
+  });
+  const t = out[sess.outputNames[0]], dims = t.dims || [1, 3, ch, cw];
+  let d = null;
+  try { d = t.data; } catch (e) { /* data lives on the GPU */ }
+  if (!d || !d.length) d = await t.getData();
+  if (d.length < 3 * N) throw new Error('The fast removal model sent back the wrong size.');
+  const last = dims.length === 4 && dims[3] === 3 && dims[1] !== 3, rgba = new Uint8ClampedArray(N * 4);
+  for (let i = 0; i < N; i++) {
+    const o = i * 4;
+    if (last) { rgba[o] = d[i * 3]; rgba[o + 1] = d[i * 3 + 1]; rgba[o + 2] = d[i * 3 + 2]; }
+    else { rgba[o] = d[i]; rgba[o + 1] = d[N + i]; rgba[o + 2] = d[2 * N + i]; }
+    rgba[o + 3] = 255;
+  }
+  return rgba;
+}
+async function removeFill(crop, hole, cw, ch) {
+  const run = (k) => (k === 'migan' ? miganFill(crop, hole, cw, ch) : Lama.run(rmTo512(crop, cw, ch), rmMask512(hole, cw, ch)).then((o) => rmFrom512(o, cw, ch)));
+  const key = removeKey();
+  Remover.key = key;
+  syncRemove();
+  try { return await run(key); }
+  catch (e) {
+    if (pref('safelight.removeModel', 'auto') !== 'auto') throw e;
+    console.warn('The ' + MODELS[key].name + ' failed, trying the other one', e);
+    Remover.key = key === 'migan' ? 'lama' : 'migan';
+    syncRemove();
+    return run(Remover.key);
+  }
+}
 let rmEls = null;
 function syncRemove() {
-  const st = Lama.status(), fills = state.cur && state.cur.history ? (S().fills || []).length : 0;
+  const rk = Remover.busy && Remover.key ? Remover.key : removeKey(), st = Hub.status(rk), fills = state.cur && state.cur.history ? (S().fills || []).length : 0;
   const mb = (x) => Math.max(0, Math.round(x / 1048576));
   let text = '', work = '';
   if (st.phase === 'runtime') text = work = 'Loading the AI engine…';
@@ -5525,10 +5727,10 @@ function syncRemove() {
   else if (st.phase === 'ready') {
     text = st.backend === 'webgpu' ? 'Ready. The model runs on this device’s graphics chip.' : 'Ready. This browser has no WebGPU, so each removal can take a while.';
     if (Remover.busy) text = work = st.backend === 'webgpu' ? 'Removing…' : 'Removing… This can take a while without WebGPU.';
-  } else text = Remover.cached ? 'The model is saved on this device. Paint over something to remove it.' : 'Paint over something to remove it. The first time, Safelight downloads a 37 MB model and keeps it on this device.';
+  } else text = Remover.cached ? 'The ' + MODELS[rk].name + ' is saved on this device. Paint over something to remove it.' : 'Paint over something to remove it. The first time, Safelight downloads a ' + MODELS[rk].mb + ' MB model and keeps it on this device.';
   if (rmEls) {
     rmEls.status.textContent = text;
-    rmEls.get.hidden = Lama.ready() || Remover.cached || ['runtime', 'download', 'start'].includes(st.phase);
+    rmEls.get.hidden = Hub.ready(rk) || Remover.cached || ['runtime', 'download', 'start'].includes(st.phase);
     rmEls.clear.disabled = !fills || Remover.busy;
     rmEls.count.textContent = fills ? fills + (fills === 1 ? ' removal on this photo.' : ' removals on this photo.') : 'No removals yet.';
   }
@@ -5689,9 +5891,8 @@ async function runRemoval(d) {
     const crop = Engine.renderSmall(cw, ch, [cw0 / p.w, 0, 0, ch0 / p.h, cx0 / p.w, cy0 / p.h], { bypass: true, pre: true });
     const grow = Math.max(2, Math.round(Math.max(cw, ch) / 256));
     const hole = rmStroke(pts.map(([x, y]) => [(x - cx0) * kx, (y - cy0) * ky]), R * Math.max(kx, ky) + grow, cw, ch);
-    const out = await Lama.run(rmTo512(crop, cw, ch), rmMask512(hole, cw, ch));
+    const filled = await removeFill(crop, hole, cw, ch);
     if (state.cur !== p || !p.history) return;
-    const filled = rmFrom512(out, cw, ch);
     const f = Math.max(2, Math.round(Math.max(cw, ch) / 160));
     const alpha = rmBlur(Float32Array.from(rmDilate(hole, cw, ch, f)), cw, ch, Math.ceil(f / 2));
     let tx0 = cw, ty0 = ch, tx1 = -1, ty1 = -1;
@@ -5729,6 +5930,7 @@ async function runRemoval(d) {
   } finally {
     Remover.busy = false;
     Remover.stroke = null;
+    Remover.key = '';
     syncRemove();
     syncRetouch();
   }
@@ -5790,11 +5992,12 @@ function depthPNG(data, w, hgt) {
 const newId = (c) => c + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 /* ---------- AI masks: subject (BiRefNet), background (the subject inverted) and sky (SegFormer) ---------- */
-const AIM = { busy: null, last: null };
+const AIM = { busy: null, last: null, msg: '' };
 let aiMaskEls = {};
 function aiMaskHint(m) {
   if (m.ai.kind === 'sky') return 'Sky found by an AI model. Paint to add to it, or tick Erase to take parts away.';
   if (m.ai.kind === 'object') return 'Object you picked, found by an AI model. Paint to add to it, or tick Erase to take parts away.';
+  if (m.ai.kind === 'text') return 'Everything matching “' + (m.ai.text || '') + '”, found by SAM 3. Paint to add to it, or tick Erase to take parts away.';
   return (m.invert ? 'Everything except the subject, found by an AI model.' : 'Subject found by an AI model.') + ' Paint to add to it, or tick Erase to take parts away.';
 }
 function seedMask(buf, w, hgt, ch, r) {
@@ -5846,35 +6049,62 @@ async function skyRaster() {
   Hub.release('sky');
   return refineMask(prob, ow, oh, 0.3, 0.7);
 }
-async function addAIMask(kind) {
+/* the photo goes to SAM 3 with the phrase; every mask that comes back is merged, then refined on this device */
+async function textRaster(phrase) {
+  const p = state.cur, token = hfToken();
+  if (!token) throw new Error('Select by typing uses SAM 3 on Hugging Face. Save your token in Generative edit first.');
+  const k = Math.min(1, 1536 / Math.max(p.w, p.h)), w = Math.max(16, Math.round(p.w * k)), hh = Math.max(16, Math.round(p.h * k));
+  const px = Engine.renderSmall(w, hh, [1, 0, 0, 1, 0, 0], { bypass: true, pre: true });
+  const say = (m) => { AIM.msg = m; syncAIMasks(); };
+  const route = await falRoute('facebook/sam3', token, null, 'seg');
+  const { out, http } = await falQueue({ route, token, onStatus: say, label: 'SAM 3',
+    body: { image_url: toDataURL(px, w, hh, 'image/jpeg', 0.92), prompt: phrase, apply_mask: false, return_multiple_masks: true, max_masks: 8, output_format: 'png' } });
+  const urls = ((out && out.masks) || []).map((m) => (m && typeof m === 'object' ? m.url : m)).filter(Boolean);
+  if (!urls.length && out && out.image && out.image.url) urls.push(out.image.url);
+  const prob = new Float32Array(w * hh);
+  say('Reading the selection…');
+  for (const u of urls.slice(0, 8)) {
+    const d = await blobToRGBA(await (await http(u, {})).blob(), w, hh);
+    let aMin = 255;
+    for (let i = 3; i < d.length; i += 28) if (d[i] < aMin) aMin = d[i];
+    const useA = aMin < 250;
+    for (let i = 0, n = w * hh; i < n; i++) {
+      const v = useA ? d[i * 4 + 3] / 255 : (d[i * 4] * 0.299 + d[i * 4 + 1] * 0.587 + d[i * 4 + 2] * 0.114) / 255;
+      if (v > prob[i]) prob[i] = v;
+    }
+  }
+  return refineMask(prob, w, hh, 0.3, 0.7);
+}
+async function addAIMask(kind, phrase) {
   const p = state.cur;
   if (!p || !p.history) return;
+  if (kind === 'text') { phrase = String(phrase || '').trim().replace(/[.?!]+$/, ''); if (!phrase) { toast('Type what to select first.'); return; } }
   if (S().masks.length >= 4) { toast('A photo can have up to four masks.'); return; }
   if (AIM.busy) { toast('Still working on the last selection.'); return; }
   AIM.busy = kind;
   syncAIMasks();
   try {
     if (Fills.sync()) sourceChanged();
-    const model = kind === 'sky' ? 'sky' : 'subject', key = p.id + '|' + Fills.key() + '|' + model;
+    const model = kind === 'sky' ? 'sky' : kind === 'text' ? 'text:' + phrase.toLowerCase() : 'subject', key = p.id + '|' + Fills.key() + '|' + model;
     let r = AIM.last && AIM.last.key === key ? AIM.last.raster : null;
     if (!r) {
-      r = model === 'sky' ? await skyRaster() : await subjectRaster();
+      r = model === 'sky' ? await skyRaster() : kind === 'text' ? await textRaster(phrase) : await subjectRaster();
       AIM.last = { key, raster: r };
     }
     if (state.cur !== p || !p.history) return;
     let peak = 0;
     for (let i = 0; i < r.data.length; i += 5) if (r.data[i] > peak) peak = r.data[i];
-    if (peak < 96) { toast(model === 'sky' ? 'No sky was found in this photo.' : 'No clear subject was found in this photo.', 3600); return; }
+    if (peak < 96) { toast(kind === 'text' ? 'Nothing matching “' + phrase + '” was found.' : model === 'sky' ? 'No sky was found in this photo.' : 'No clear subject was found in this photo.', 3600); return; }
     if (S().masks.length >= 4) { toast('A photo can have up to four masks.'); return; }
     const id = newId('m');
     Fills.masks.set(id, { photo: p.id, w: r.w, h: r.h, data: r.data });
     const blob = await grayPNG(r.data, r.w, r.h);
     if (blob) await Library.putPatch({ id, photo: p.id, kind: 'mask', w: r.w, h: r.h, blob });
     if (state.cur !== p) return;
-    const ms = S().masks, m = newMask('brush'), base = kind === 'sky' ? 'Sky' : kind === 'background' ? 'Background' : 'Subject';
+    const ms = S().masks, m = newMask('brush'), base = kind === 'text' ? phrase.charAt(0).toUpperCase() + phrase.slice(1, 28) : kind === 'sky' ? 'Sky' : kind === 'background' ? 'Background' : 'Subject';
     const same = ms.filter((x) => x.ai && x.ai.kind === kind).length;
     m.name = base + (same ? ' ' + (same + 1) : '');
-    m.ai = { kind, id };
+    m.ai = kind === 'text' ? { kind, id, text: phrase } : { kind, id };
     m.invert = kind === 'background';
     ms.push(m);
     state.maskSel = ms.length - 1;
@@ -5887,23 +6117,60 @@ async function addAIMask(kind) {
     toast(err && err.message ? err.message : 'The selection did not work.', 4200);
   } finally {
     AIM.busy = null;
+    AIM.msg = '';
     syncAIMasks();
   }
 }
 function syncAIMasks() {
-  const k = AIM.busy ? (AIM.busy === 'sky' ? 'sky' : 'subject') : null;
-  const text = k ? hubText(k, AIM.busy === 'sky' ? 'Finding the sky…' : 'Finding the subject…') : '';
+  const k = AIM.busy && AIM.busy !== 'text' ? (AIM.busy === 'sky' ? 'sky' : 'subject') : null;
+  const text = AIM.busy === 'text' ? AIM.msg || 'Finding it…' : k ? hubText(k, AIM.busy === 'sky' ? 'Finding the sky…' : 'Finding the subject…') : '';
   if (aiMaskEls.status) {
     let idle = 'The first time, Select subject downloads a 96 MB model and Select sky a 15 MB one. Both then run on this device.';
     for (const m of ['subject', 'sky']) { const s = Hub.status(m); if (s.phase === 'error' && s.message) idle = s.message + ' Tap the button again to retry.'; }
     aiMaskEls.status.textContent = text || idle;
     aiMaskEls.buttons.querySelectorAll('button').forEach((b) => { b.disabled = !!AIM.busy; });
+    if (aiMaskEls.typeGo) aiMaskEls.typeGo.disabled = !!AIM.busy;
   }
   Pill.set('aim', text);
 }
 
 /* ---------- lens blur: a depth map from Depth Anything V2 decides how much each pixel blurs ---------- */
-const LensFx = { busy: false, key: '', full: '', timer: 0, pick: false, depthFor: '' };
+const LensFx = { busy: false, key: '', full: '', timer: 0, pick: false, depthFor: '', model: '' };
+function depthPref() { return pref('safelight.depthModel', 'fast'); }
+function depthKind() { return depthPref() === 'best' && navigator.gpu ? 'best' : 'fast'; }
+/* half floats for the Best depth model, which takes and returns float16 */
+const toHalf = (() => {
+  const f = new Float32Array(1), u = new Uint32Array(f.buffer);
+  return (src) => {
+    const o = new Uint16Array(src.length);
+    for (let i = 0; i < src.length; i++) {
+      f[0] = src[i];
+      const x = u[0], sg = (x >>> 16) & 0x8000, e = ((x >>> 23) & 0xff) - 112, m = x & 0x7fffff;
+      if (e <= 0) o[i] = e < -10 ? sg : sg | (((m | 0x800000) >> (1 - e)) + 0x1000) >> 13;
+      else if (e >= 31) o[i] = sg | 0x7c00;
+      else o[i] = sg | ((e << 10) + ((m + 0x1000) >> 13));
+    }
+    return o;
+  };
+})();
+let HALF = null;
+async function halfData(t) {
+  let d = null;
+  try { d = t.data; } catch (e) { /* on the GPU */ }
+  if (!d || !d.length) d = await t.getData();
+  if (d instanceof Float32Array) return d;
+  if (!(d instanceof Uint16Array)) return Float32Array.from(d);
+  if (!HALF) {
+    HALF = new Float32Array(65536);
+    for (let hb = 0; hb < 65536; hb++) {
+      const sg = hb & 0x8000 ? -1 : 1, e = (hb >> 10) & 0x1f, m = hb & 0x3ff;
+      HALF[hb] = e === 0 ? sg * m * 5.960464477539063e-8 : e === 31 ? (m ? NaN : sg * Infinity) : sg * (1 + m / 1024) * Math.pow(2, e - 15);
+    }
+  }
+  const o = new Float32Array(d.length);
+  for (let i = 0; i < d.length; i++) o[i] = HALF[d[i]];
+  return o;
+}
 let lensEls = {};
 function lensActive() {
   const p = state.cur, L = S().lens;
@@ -5969,17 +6236,8 @@ function lensFlush() {
   LensFx.full = LensFx.key;
   lowRebuild();
 }
-async function computeDepth(p) {
-  const ar = p.w / p.h, M = 14;
-  let W, H;
-  if (ar >= 1) { H = 518; W = Math.min(1022, Math.max(M, Math.round((518 * ar) / M) * M)); }
-  else { W = 518; H = Math.min(1022, Math.max(M, Math.round(518 / ar / M) * M)); }
-  const px = Engine.renderSmall(W, H, [1, 0, 0, 1, 0, 0], { bypass: true, pre: true });
-  const { out, sess } = await Hub.run('depth', (s) => ({ [s.inputNames[0]]: new ort.Tensor('float32', planar(px, W, H, IMNET), [1, 3, H, W]) }));
-  const res = out[sess.outputNames[0]], raw = await tensorData(res), dims = res.dims;
-  const oh = dims[dims.length - 2], ow = dims[dims.length - 1], n = ow * oh;
-  Hub.release('depth');
-  const sorted = Float32Array.from(raw.subarray(0, n)).sort();
+function depthFinish(raw, ow, oh, p) {
+  const n = ow * oh, sorted = Float32Array.from(raw.subarray(0, n)).sort();
   const lo = sorted[Math.floor(n * 0.01)], hi = sorted[Math.min(n - 1, Math.floor(n * 0.99))], span = Math.max(1e-6, hi - lo);
   const norm = new Float32Array(n);
   for (let i = 0; i < n; i++) norm[i] = Math.min(1, Math.max(0, (raw[i] - lo) / span));
@@ -5988,6 +6246,37 @@ async function computeDepth(p) {
   const q = guided(grayOf(guide, dw * dh), resizeF(norm, ow, oh, dw, dh), dw, dh, Math.max(2, Math.round(Math.max(dw, dh) / 128)), 2e-3);
   for (let i = 0; i < q.length; i++) q[i] = Math.min(1, Math.max(0, q[i]));
   return { w: dw, h: dh, data: q };
+}
+/* Depth Anything 3 Mono Large takes a square of exactly 1036 (or 728, 518, 364, 252) and already folds its sky head in */
+async function computeDepth3(p) {
+  const S3 = 1036, px = Engine.renderSmall(S3, S3, [1, 0, 0, 1, 0, 0], { bypass: true, pre: true });
+  const half = toHalf(planar(px, S3, S3, IMNET));
+  LensFx.model = 'depth3';
+  const { out, sess } = await Hub.run('depth3', (sn) => ({ [sn.inputNames[0]]: new ort.Tensor('float16', half, [1, 3, S3, S3]) }));
+  const res = out[sess.outputNames[0]], raw = await halfData(res), dims = res.dims || [1, 1, S3, S3];
+  Hub.release('depth3');
+  const oh = dims[dims.length - 2], ow = dims[dims.length - 1];
+  if (!(ow > 1 && oh > 1) || raw.length < ow * oh || !Number.isFinite(raw[(ow * oh) >> 1])) throw new Error('The Best depth model sent back no depth map.');
+  for (let i = 0; i < raw.length; i++) if (!Number.isFinite(raw[i])) raw[i] = 0;
+  return depthFinish(raw, ow, oh, p);
+}
+async function computeDepth(p) {
+  if (depthKind() === 'best') {
+    try { const d = await computeDepth3(p); d.kind = 'best'; return d; }
+    catch (e) { console.warn(e); toast('The Best depth model did not run here, so Safelight used Fast. ' + (e && e.message ? e.message : ''), 4600); }
+  }
+  LensFx.model = 'depth';
+  const ar = p.w / p.h, M = 14;
+  let W, H;
+  if (ar >= 1) { H = 518; W = Math.min(1022, Math.max(M, Math.round((518 * ar) / M) * M)); }
+  else { W = 518; H = Math.min(1022, Math.max(M, Math.round(518 / ar / M) * M)); }
+  const px = Engine.renderSmall(W, H, [1, 0, 0, 1, 0, 0], { bypass: true, pre: true });
+  const { out, sess } = await Hub.run('depth', (sn) => ({ [sn.inputNames[0]]: new ort.Tensor('float32', planar(px, W, H, IMNET), [1, 3, H, W]) }));
+  const res = out[sess.outputNames[0]], raw = await tensorData(res), dims = res.dims;
+  Hub.release('depth');
+  const d = depthFinish(raw, dims[dims.length - 1], dims[dims.length - 2], p);
+  d.kind = 'fast';
+  return d;
 }
 async function ensureDepth() {
   const p = state.cur;
@@ -6003,6 +6292,7 @@ async function ensureDepth() {
     const blob = await depthPNG(d.data, d.w, d.h);
     if (blob) await Library.putPatch({ id, photo: p.id, kind: 'depth', w: d.w, h: d.h, blob });
     p.depthId = id;
+    p.depthModel = d.kind || 'fast';
     Library.save(p);
     if (state.cur === p) { uniformsDirty = true; requestRender(); }
   } catch (err) {
@@ -6010,6 +6300,7 @@ async function ensureDepth() {
     toast(err && err.message ? err.message : 'Measuring depth did not work.', 4200);
   } finally {
     LensFx.busy = false;
+    LensFx.model = '';
     syncLens();
   }
 }
@@ -6034,12 +6325,12 @@ function pickLensFocus(x, y) {
   ensureDepth();
 }
 function syncLens() {
-  const p = state.cur, s = Hub.status('depth'), text = LensFx.busy ? hubText('depth', 'Measuring depth…') : '';
+  const p = state.cur, dk = LensFx.model || (depthKind() === 'best' ? 'depth3' : 'depth'), s = Hub.status(dk), text = LensFx.busy ? hubText(dk, 'Measuring depth…') : '';
   if (lensEls.status) {
     lensEls.status.textContent = text
       || (s.phase === 'error' && s.message ? s.message + ' Move Amount to retry.'
         : p && p.depthId ? 'Depth is measured for this photo. Pick focus, then tap what should stay sharp.'
-          : 'Raise Amount to start. The first time, Safelight downloads a 27 MB depth model.');
+          : 'Raise Amount to start. The first time, Safelight downloads a ' + MODELS[depthKind() === 'best' ? 'depth3' : 'depth'].mb + ' MB depth model.');
   }
   Pill.set('lens', text);
 }
@@ -6052,13 +6343,28 @@ function buildLensPanel() {
     help: 'How much depth around the focus point stays sharp.', get: () => L().range, set: (v) => { L().range = v; } });
   const pick = h('button', { class: 'btn small', type: 'button', text: 'Pick focus', 'aria-pressed': 'false', onclick: () => setLensPick(!LensFx.pick) });
   const status = h('p', { class: 'hint', 'aria-live': 'polite' });
-  lensEls = { pick, status };
+  const dm = h('select', { class: 'sel', 'aria-label': 'Depth model' }, ...[['fast', 'Fast: 27 MB'], ['best', 'Best: 336 MB, needs WebGPU']].map(([v, l]) => h('option', { value: v, text: l })));
+  dm.value = depthPref();
+  dm.addEventListener('change', () => {
+    setPref('safelight.depthModel', dm.value);
+    const p = state.cur;
+    if (p && p.history && p.depthId && (p.depthModel || 'fast') !== depthKind() && !LensFx.busy) {
+      p.depthId = null; p.depthModel = null;
+      Library.save(p);
+      LensFx.full = ''; uniformsDirty = true; requestRender();
+      if (S().lens.amount > 0) ensureDepth();
+    }
+    if (dm.value === 'best' && !navigator.gpu) toast('This browser has no WebGPU, so Lens blur keeps using Fast.', 3600);
+    syncLens();
+  });
+  const depthRow = h('div', { class: 'field gen-field' }, h('span', { text: 'Depth' }), dm);
+  lensEls = { pick, status, dm };
   syncers.push(syncLens);
   return panel('Lens blur', {
     cat: 'effects', intro: INTRO.lens,
     reset: () => { S().lens = { ...LENS_DEF }; setLensPick(false); },
     changed: () => { const l = S().lens; return l.amount !== LENS_DEF.amount || l.range !== LENS_DEF.range || l.fx !== LENS_DEF.fx || l.fy !== LENS_DEF.fy; },
-  }, amount, range, h('div', { class: 'btn-row' }, pick), status, hint('Model: Depth Anything V2 Small, Apache 2.0 license.'));
+  }, amount, range, h('div', { class: 'btn-row' }, pick), depthRow, status, hint('Models: Depth Anything V2 Small for Fast and Depth Anything 3 Mono Large for Best, both Apache 2.0. Best gives cleaner edges around hair and players and needs WebGPU.'));
 }
 Hub.on(() => { syncAIMasks(); syncLens(); syncObj(); syncDenoise(); });
 
@@ -6117,34 +6423,58 @@ async function upscaleImage(src, w, hgt, factor, report) {
 
 /* ---------- generative edit: Qwen Image Edit through Hugging Face Inference Providers (fal), like Generative Fill ---------- */
 const GEN_MODELS = [
-  ['Qwen/Qwen-Image-Edit-2511', 'Qwen Image Edit 2511'],
-  ['Qwen/Qwen-Image-Edit-2509', 'Qwen Image Edit 2509'],
-  ['black-forest-labs/FLUX.1-Kontext-dev', 'FLUX.1 Kontext dev, non-commercial'],
+  ['auto', 'Auto: best for each edit'],
+  ['Qwen/Qwen-Image-Edit-2511', 'Qwen Image Edit 2511, best overall'],
+  ['black-forest-labs/FLUX.2-klein-4B', 'FLUX.2 klein 4B, fastest and cheapest'],
+  ['meituan-longcat/LongCat-Image-Edit', 'LongCat Image Edit, best with text'],
 ];
+const GEN_NAMES = { 'Qwen/Qwen-Image-Edit-2511': 'Qwen Image Edit 2511', 'black-forest-labs/FLUX.2-klein-4B': 'FLUX.2 klein 4B', 'meituan-longcat/LongCat-Image-Edit': 'LongCat Image Edit' };
+/* fal endpoints to use when the Hugging Face listing has none for the task */
+const FAL_KNOWN = {
+  'black-forest-labs/FLUX.2-klein-4B': { edit: 'fal-ai/flux-2/klein/4b/edit', t2i: 'fal-ai/flux-2/klein/4b' },
+  'meituan-longcat/LongCat-Image-Edit': { edit: 'fal-ai/longcat-image/edit' },
+  'facebook/sam3': { seg: 'fal-ai/sam-3/image' },
+};
+const FAL_TASK = { edit: 'image-to-image', t2i: 'text-to-image', seg: 'image-segmentation' };
+const ONE_IMAGE = new Set(['meituan-longcat/LongCat-Image-Edit']);
+/* Auto: LongCat for changing words, signs and numbers, Qwen 2511 for everything else, FLUX.2 klein if neither is offered */
+const TEXT_EDIT_RE = /["\u201c\u201d\u201e\u00ab\u00bb]|\b(text|sign|signs|says|saying|word|words|letter|letters|lettering|caption|headline|title|font|typo|spelling|jersey numbers?|number on)\b/i;
+function autoModels(raw, refs) {
+  const q = 'Qwen/Qwen-Image-Edit-2511', lc = 'meituan-longcat/LongCat-Image-Edit', kl = 'black-forest-labs/FLUX.2-klein-4B';
+  return !refs && TEXT_EDIT_RE.test(raw || '') ? [lc, q, kl] : [q, kl];
+}
 const HF_TOKEN_KEY = 'safelight.hfToken';
 const Gen = { busy: false, ctl: null, results: [], idx: -1, refs: [], temp: null, photo: null, keeping: false, maps: {}, msg: '' };
 let genEls = {};
 function hfToken() { try { return localStorage.getItem(HF_TOKEN_KEY) || ''; } catch (e) { return ''; } }
 function setHfToken(v) { try { if (v) localStorage.setItem(HF_TOKEN_KEY, v); else localStorage.removeItem(HF_TOKEN_KEY); } catch (e) { /* private mode */ } }
-async function falRoute(model, token, signal) {
-  if (Gen.maps[model]) return Gen.maps[model];
-  let res;
+async function falRoute(model, token, signal, task) {
+  task = task || 'edit';
+  const key = model + '|' + task, known = FAL_KNOWN[model] && FAL_KNOWN[model][task];
+  if (Gen.maps[key]) return Gen.maps[key];
+  let res = null, list = [];
   try { res = await fetch('https://huggingface.co/api/models/' + model + '?expand[]=inferenceProviderMapping', { headers: { Authorization: 'Bearer ' + token }, signal }); }
-  catch (e) { if (signal && signal.aborted) throw e; throw new Error('Hugging Face could not be reached. Check your connection.'); }
-  if (res.status === 401) throw new Error('Hugging Face rejected the token. Make one with Inference Providers permission.');
-  if (!res.ok) throw new Error('Hugging Face could not find ' + model + ' (error ' + res.status + ').');
-  const m = (await res.json()).inferenceProviderMapping;
-  let fal = null;
-  if (Array.isArray(m)) fal = m.find((e) => e && e.provider === 'fal-ai') || null;
-  else if (m && typeof m === 'object' && m['fal-ai']) fal = m['fal-ai'];
-  if (!fal || !fal.providerId || (fal.status && fal.status !== 'live')) throw new Error('This model is not offered by the fal provider right now. Pick another model.');
-  Gen.maps[model] = fal.providerId;
-  return fal.providerId;
+  catch (e) { if (signal && signal.aborted) throw e; if (!known) throw new Error('Hugging Face could not be reached. Check your connection.'); }
+  if (res) {
+    if (res.status === 401) throw new Error('Hugging Face rejected the token. Make one with Inference Providers permission.');
+    if (res.ok) {
+      let m = null;
+      try { m = (await res.json()).inferenceProviderMapping; } catch (e) { /* no listing */ }
+      if (Array.isArray(m)) list = m.filter((e) => e && e.provider === 'fal-ai');
+      else if (m && typeof m === 'object' && m['fal-ai']) list = [m['fal-ai']];
+    } else if (!known) throw new Error('Hugging Face could not find ' + model + ' (error ' + res.status + ').');
+  }
+  const live = list.filter((e) => e.providerId && (!e.status || e.status === 'live'));
+  let pick = live.find((e) => e.task === FAL_TASK[task]) || null;
+  if (!pick && !known) pick = live.find((e) => !e.task) || live[0] || null;
+  const route = pick ? pick.providerId : known;
+  if (!route) { const err = new Error('This model is not offered by the fal provider right now. Pick another model.'); err.code = 'noroute'; throw err; }
+  Gen.maps[key] = route;
+  return route;
 }
-/* the same queue flow the official Hugging Face client uses for fal, with every image in image_urls so references reach the model */
-async function falEdit({ model, prompt, images, token, signal, onStatus, extra }) {
-  const route = await falRoute(model, token, signal), base = 'https://router.huggingface.co/fal-ai', q = '?_subdomain=queue';
-  const auth = { Authorization: 'Bearer ' + token };
+/* the queue flow the official Hugging Face client uses for fal; resolves to the provider's JSON reply */
+async function falQueue({ route, body, token, signal, onStatus, label }) {
+  const base = 'https://router.huggingface.co/fal-ai', q = '?_subdomain=queue', auth = { Authorization: 'Bearer ' + token };
   const http = async (url, opts) => {
     let r;
     try { r = await fetch(url, Object.assign({ signal }, opts)); }
@@ -6154,27 +6484,35 @@ async function falEdit({ model, prompt, images, token, signal, onStatus, extra }
     if (!r.ok) {
       let detail = '';
       try { detail = (await r.text()).slice(0, 180); } catch (e) { /* no body */ }
-      throw new Error('The edit failed (error ' + r.status + ')' + (detail ? ': ' + detail : '.'));
+      throw new Error((label || 'The request') + ' failed (error ' + r.status + ')' + (detail ? ': ' + detail : '.'));
     }
     return r;
   };
-  onStatus('Sending to Hugging Face…');
-  const body = Object.assign({ prompt, num_images: 1, output_format: 'png' }, images && images.length ? { image_url: images[0], image_urls: images } : {}, extra || {});
+  onStatus('Sending to ' + (label || 'Hugging Face') + '…');
   const sub = await (await http(base + '/' + route + q, { method: 'POST', headers: Object.assign({ 'Content-Type': 'application/json' }, auth), body: JSON.stringify(body) })).json();
   if (!sub || !sub.response_url) throw new Error('Hugging Face sent back an unexpected reply.');
   const path = new URL(sub.response_url).pathname, t0 = Date.now();
   let status = sub.status;
   while (status !== 'COMPLETED') {
-    if (Date.now() - t0 > 240000) throw new Error('The edit took too long. Try again.');
+    if (Date.now() - t0 > 240000) throw new Error('It took too long. Try again.');
     await new Promise((r) => setTimeout(r, 900));
     if (signal && signal.aborted) throw new DOMException('Stopped', 'AbortError');
-    const s = await (await http(base + path + '/status' + q, { headers: auth })).json();
-    status = s.status;
+    const st = await (await http(base + path + '/status' + q, { headers: auth })).json();
+    status = st.status;
     if (status === 'IN_QUEUE') onStatus('Waiting in line at the provider…');
-    else if (status === 'IN_PROGRESS') onStatus('Generating…');
-    else if (status !== 'COMPLETED') throw new Error('The provider stopped the edit (' + status + ').');
+    else if (status === 'IN_PROGRESS') onStatus('Working on it' + (label ? ' with ' + label : '') + '…');
+    else if (status !== 'COMPLETED') throw new Error('The provider stopped it (' + status + ').');
   }
   const out = await (await http(base + path + q, { headers: auth })).json();
+  return { out, http };
+}
+/* every image goes in image_urls so references reach the model; image_url covers the models that take one */
+async function falEdit({ model, prompt, images, token, signal, onStatus, extra, task, label }) {
+  task = task || (images && images.length ? 'edit' : 't2i');
+  if (task === 'edit' && ONE_IMAGE.has(model) && images.length > 1) throw new Error((GEN_NAMES[model] || model) + ' takes one photo. Remove the reference photos or pick another model.');
+  const route = await falRoute(model, token, signal, task);
+  const body = Object.assign({ prompt, num_images: 1, output_format: 'png' }, images && images.length ? { image_url: images[0], image_urls: images } : {}, extra || {});
+  const { out, http } = await falQueue({ route, body, token, signal, onStatus, label: label || GEN_NAMES[model] || 'Hugging Face' });
   const url = out && out.images && out.images[0] && out.images[0].url;
   if (!url) throw new Error('The edit came back without an image.');
   onStatus('Downloading the result…');
@@ -6296,6 +6634,13 @@ async function genRun() {
   if (!p || !p.history || Gen.busy) return;
   const prompt = genEls.ta.value.trim();
   if (!prompt) { genStatus('Type what you want to change first.'); genEls.ta.focus(); return; }
+  if (askInstead(prompt)) {
+    aiEls.ta.value = prompt.slice(0, 600);
+    genStatus('Cropping, straightening and focus are exact edits, not repainting, so Ask is doing this one. Its result is in the Ask panel above.');
+    if (aiEls.section) { showEditGroup('ai'); aiEls.section.classList.remove('closed'); aiEls.section.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }
+    aiRun('edit');
+    return;
+  }
   const token = hfToken();
   if (!token && genEls.engine.value === 'hf') { genStatus('Paste your Hugging Face token below first.'); genEls.token.focus(); return; }
   if (Gen.photo && Gen.photo !== p) genReset(true);
@@ -6311,7 +6656,7 @@ async function genRun() {
     const cw = Math.max(256, Math.round((area.rw * k) / 16) * 16), ch = Math.max(256, Math.round((area.rh * k) / 16) * 16);
     const crop = Engine.renderSmall(cw, ch, [area.rw / p.w, 0, 0, area.rh / p.h, area.rx / p.w, area.ry / p.h], { bypass: true, pre: true });
     const images = [toDataURL(crop, cw, ch, 'image/jpeg', 0.95), ...Gen.refs.map((r) => r.url)];
-    const blob = await editEngine({ prompt: genPrompt(prompt, Gen.refs.length), images, mask: area.mask ? areaMaskURL(area, cw, ch, p) : null, signal: Gen.ctl.signal, onStatus: genStatus });
+    const blob = await editEngine({ prompt: genPrompt(prompt, Gen.refs.length), raw: prompt, images, mask: area.mask ? areaMaskURL(area, cw, ch, p) : null, signal: Gen.ctl.signal, onStatus: genStatus });
     if (state.cur !== p || !p.history) return;
     let img = await blobToRGBA(blob, cw, ch), pw = cw, ph = ch;
     const want = area.rw / cw;
@@ -6329,7 +6674,8 @@ async function genRun() {
     Gen.results.push({ id, x: (area.rx + (patch.tx * area.rw) / pw) / p.w, y: (area.ry + (patch.ty * area.rh) / ph) / p.h, w: ((patch.w * area.rw) / pw) / p.w, h: ((patch.h * area.rh) / ph) / p.h });
     Gen.busy = false;
     genShow(Gen.results.length - 1);
-    genStatus(Gen.results.length > 1 ? 'Result ' + Gen.results.length + ' is showing. Flip through them, then keep the one you like.' : 'Here is the result. Keep it, try again for another, or discard it.');
+    const by = Gen.lastLabel ? ' from ' + Gen.lastLabel : '';
+    genStatus(Gen.results.length > 1 ? 'Result ' + Gen.results.length + by + ' is showing. Flip through them, then keep the one you like.' : 'Here is the result' + by + '. Keep it, try again for another, or discard it.');
   } catch (err) {
     Gen.busy = false;
     if (err && err.name === 'AbortError') genStatus('Stopped.');
@@ -6390,9 +6736,9 @@ function syncGen() {
   if (genEls.strength && Gen.results[Gen.idx]) { const a = Gen.results[Gen.idx].a; genEls.strength.value = String(Math.round((a == null ? 1 : a) * 100)); genEls.strengthVal.textContent = genEls.strength.value; }
   genEls.next.disabled = Gen.idx >= n - 1;
   genEls.addRef.disabled = Gen.refs.length >= 2;
-  const tok = hfToken();
-  genEls.tokenRow.hidden = !!tok;
-  genEls.tokenSaved.hidden = !tok;
+  const tok = hfToken(), sp = !genEls.engine || genEls.engine.value === 'space';
+  genEls.tokenRow.hidden = !!tok || !sp;
+  genEls.tokenSaved.hidden = !tok || !sp;
 }
 function buildGenPanel() {
   const ta = h('textarea', { rows: '3', maxlength: '800', 'aria-label': 'Describe the change', placeholder: 'Describe the change, like: remove the motion blur and make his shoes match image 2' });
@@ -6403,6 +6749,14 @@ function buildGenPanel() {
       ta.focus();
       if (kind) genUseArea(kind);
     } })));
+  const rlLook = h('select', { class: 'sel', 'aria-label': 'Light' }, ...RELIGHT_LOOKS.map(([v, l]) => h('option', { value: v, text: l })));
+  const rlDir = h('select', { class: 'sel', 'aria-label': 'Light direction' }, ...RELIGHT_DIRS.map(([v, l]) => h('option', { value: v, text: l })));
+  const rlGo = h('button', { class: 'btn small', type: 'button', text: 'Relight', onclick: () => {
+    ta.value = relightPrompt(rlLook.value, rlDir.value);
+    if (genEls.area && genEls.area.value !== 'all') genEls.area.value = 'all';
+    genRun();
+  } });
+  const relight = h('div', { class: 'gen-relight' }, h('div', { class: 'row' }, h('span', { class: 'gen-relight-name', text: 'Relight' }), rlLook, rlDir, rlGo));
   const area = h('select', { class: 'sel', 'aria-label': 'Area to change' });
   const model = h('select', { class: 'sel', 'aria-label': 'Model' }, ...GEN_MODELS.map(([v, l]) => h('option', { value: v, text: l })));
   const refInput = h('input', { type: 'file', accept: 'image/*', multiple: true, hidden: true });
@@ -6427,12 +6781,13 @@ function buildGenPanel() {
     setHfToken(v); token.value = ''; genStatus('Token saved in this browser.'); syncGen();
   } });
   const tokenRow = h('div', { class: 'gen-token-row' },
-    h('p', { class: 'hint', html: 'Make a token at <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener">huggingface.co/settings/tokens</a> with the “Inference Providers” permission. It is saved only in this browser, never in your GitHub repo.' }),
+    h('p', { class: 'hint', html: 'Make a free token at <a href="https://huggingface.co/settings/tokens" target="_blank" rel="noopener">huggingface.co/settings/tokens</a>. Read access is enough. It lets the free Space use your account’s daily GPU minutes, and it is saved only in this browser, never in your GitHub repo.' }),
     h('div', { class: 'row' }, token, saveTok));
   const tokenSaved = h('p', { class: 'hint', hidden: true }, 'Hugging Face token saved in this browser. ',
     h('button', { class: 'linkish', type: 'button', text: 'Forget it', onclick: () => { setHfToken(''); genStatus('Token removed.'); syncGen(); } }));
   const engine = h('select', { class: 'sel', 'aria-label': 'Engine' }, ...ENGINES.map(([v, l]) => h('option', { value: v, text: l })));
-  engine.value = pref('safelight.genEngine', 'hf');
+  const ev = pref('safelight.genEngine', 'space');
+  engine.value = ENGINES.some(([v]) => v === ev) ? ev : 'space';
   engine.addEventListener('change', () => { setPref('safelight.genEngine', engine.value); syncEngine(); });
   const modelRow = h('div', { class: 'field gen-field' }, h('span', { text: 'Model' }), model);
   const space = h('input', { type: 'text', class: 'gen-token', value: pref('safelight.genSpace', 'Qwen/Qwen-Image-Edit'), spellcheck: 'false', 'aria-label': 'Hugging Face Space' });
@@ -6445,6 +6800,19 @@ function buildGenPanel() {
   const iopRow = h('div', { class: 'gen-engine-row' },
     h('div', { class: 'field gen-field' }, h('span', { text: 'IOPaint' }), iop),
     h('p', { class: 'hint', html: 'Free and runs on your Mac, with older models. In Terminal: <code>pip3 install iopaint</code>, then <code>iopaint start --model=Sanster/PowerPaint-V1-stable-diffusion-inpainting --device=mps --port=8080</code>. It repaints the Area mask, so pick one first. Works best from your laptop’s own copy at localhost.' }));
+  const mfx = h('input', { type: 'text', class: 'gen-token', value: pref('safelight.mflux', 'http://127.0.0.1:8090'), spellcheck: 'false', 'aria-label': 'FLUX.2 helper address' });
+  mfx.addEventListener('change', () => setPref('safelight.mflux', mfx.value.trim()));
+  const mfxStatus = h('p', { class: 'hint ai-status', 'aria-live': 'polite' });
+  const mfluxRow = h('div', { class: 'gen-engine-row' },
+    h('p', { class: 'hint', text: 'Runs the FLUX.2 klein model on your own Mac: free, no daily limit, and the photo never leaves your laptop. A small helper program has to be running in Terminal.' }),
+    h('ol', { class: 'gen-steps' },
+      h('li', { html: 'Once: in Terminal, run <code>curl -LsSf https://astral.sh/uv/install.sh | sh</code>. Close and reopen Terminal, then run <code>uv tool install mflux</code>.' }),
+      h('li', {}, 'Once: ', h('button', { class: 'linkish', type: 'button', text: 'download the helper', onclick: saveMfluxHelper }), ' to your Downloads folder.'),
+      h('li', { html: 'Each time you edit: run <code>python3 ~/Downloads/safelight-mflux.py</code> in Terminal and leave that window open.' }),
+      h('li', { text: 'Press Check, then Generate. The first edit downloads the model, several GB, so give it a few minutes.' })),
+    h('div', { class: 'btn-row' }, h('button', { class: 'btn small', type: 'button', text: 'Check', onclick: () => mfluxCheck() })),
+    mfxStatus,
+    h('details', { class: 'gen-adv' }, h('summary', { text: 'Helper address' }), h('div', { class: 'field gen-field' }, h('span', { text: 'Address' }), mfx)));
   const strength = h('input', { type: 'range', min: '0', max: '100', step: '1', value: '100', 'aria-label': 'Strength' });
   const strengthVal = h('span', { class: 'sl-val', text: '100' });
   strength.addEventListener('input', () => {
@@ -6455,22 +6823,21 @@ function buildGenPanel() {
     markDirty();
   });
   results.prepend(h('div', { class: 'sl gen-strength' }, h('span', { class: 'sl-name', text: 'Strength' }), strength, strengthVal));
-  genEls = { ta, area, model, addRef, refs, sharpen, go, stop, status, prev, next, count, results, token, tokenRow, tokenSaved, engine, modelRow, spaceRow, iopRow, space, iop, strength, strengthVal };
+  genEls = { ta, area, model, addRef, refs, sharpen, go, stop, status, prev, next, count, results, token, tokenRow, tokenSaved, engine, modelRow, spaceRow, iopRow, space, iop, strength, strengthVal, mflux: mfx, mfluxRow, mfluxStatus: mfxStatus };
   syncers.push(syncEngine);
   syncEngine();
   syncers.push(syncGen);
   return panel('Generative edit', { cat: 'ask', intro: INTRO.gen },
-    h('div', { class: 'ai-box' }, ta, chips,
+    h('div', { class: 'ai-box' }, ta, chips, relight,
       h('div', { class: 'field gen-field' }, h('span', { text: 'Area' }), area),
-      h('div', { class: 'gen-ref-row' }, addRef, refInput, refs),
-      hint('In your prompt, the photo is image 1 and references are images 2 and 3, like “make his shoes match image 2”.'),
       h('div', { class: 'field gen-field' }, h('span', { text: 'Engine' }), engine),
-      modelRow, spaceRow, iopRow,
-      h('div', { class: 'row' }, h('label', { class: 'check' }, sharpen, 'Sharpen the result with Upscale (on this device)')),
+      spaceRow, mfluxRow, tokenRow, tokenSaved,
+      h('details', { class: 'gen-adv' }, h('summary', { text: 'Reference photos and sharpening' }),
+        h('div', { class: 'gen-ref-row' }, addRef, refInput, refs),
+        hint('In your prompt, the photo is image 1 and references are images 2 and 3, like “make his shoes match image 2”. References need the Mac engine.'),
+        h('div', { class: 'row' }, h('label', { class: 'check' }, sharpen, 'Sharpen the result with Upscale (on this device)'))),
       h('div', { class: 'btn-row' }, go, stop), status, results),
-    t2iSection(),
-    tokenRow, tokenSaved,
-    hint('Generative results are repainted, not recovered: faces, hands and lettering can come back slightly different. Use an area mask to limit the change, and Before to compare.'));
+    hint('Results are repainted, not recovered: faces, hands and lettering can come back slightly different. Use an area mask to limit the change, and Before to compare.'));
 }
 
 /* ---------- select object: click it and SlimSAM outlines it, like Adobe's object selection ---------- */
@@ -6590,21 +6957,27 @@ let dnEls = {};
 const COPY_KINDS = {
   denoise: { model: 'denoise', suffix: '-denoised', working: 'Removing noise', done: 'denoised' },
   deblur: { model: 'deblur', suffix: '-sharpened', working: 'Fixing motion blur', done: 'sharpened' },
+  colorize: { model: 'colorize', suffix: '-color', working: 'Adding color', done: 'colorized', ai: 'composite' },
+  faces: { model: null, suffix: '-faces', working: 'Fixing faces', done: 'face-fixed', ai: 'composite' },
 };
 function buildDenoiseRow() {
   const btn = h('button', { class: 'btn small', type: 'button', text: 'AI Denoise', onclick: () => aiCopy('denoise') });
   const deblur = h('button', { class: 'btn small', type: 'button', text: 'Fix motion blur', onclick: () => aiCopy('deblur') });
+  const faces = h('button', { class: 'btn small', type: 'button', text: 'Fix faces', onclick: () => aiCopy('faces') });
+  const color = h('button', { class: 'btn small', type: 'button', text: 'Colorize', onclick: () => aiCopy('colorize') });
   const status = h('p', { class: 'hint', 'aria-live': 'polite' });
-  dnEls = { btn, deblur, status };
+  dnEls = { btn, deblur, faces, color, status };
   syncers.push(syncDenoise);
-  return h('div', { class: 'dn-row' }, h('div', { class: 'btn-row' }, btn, deblur), status);
+  return h('div', { class: 'dn-row' }, h('div', { class: 'btn-row' }, btn, deblur, faces, color), status,
+    h('details', { class: 'gen-adv' }, h('summary', { text: 'Fix faces needs IOPaint on your Mac' }), h('p', { class: 'hint', html: 'Once: <code>uv tool install iopaint</code>. Each time: <code>iopaint start --model=lama --device=mps --port=8080 --enable-gfpgan --gfpgan-device cpu</code>, and leave it open. The first start downloads the face model.' })));
 }
 function syncDenoise() {
   if (!dnEls.btn) return;
   dnEls.btn.disabled = dnEls.deblur.disabled = DN.busy;
-  const k = DN.kind ? COPY_KINDS[DN.kind].model : null, err = ['denoise', 'deblur'].map((m) => Hub.status(m)).find((s) => s.phase === 'error' && s.message);
-  const text = DN.busy ? (DN.msg || hubText(k, COPY_KINDS[DN.kind].working + '…')) : err ? err.message
-    : 'Both make a fixed copy with an AI model on this device and need WebGPU. AI Denoise downloads 59 MB and Fix motion blur 76 MB the first time. Fix motion blur helps with shake and mild motion, not a fully smeared subject.';
+  if (dnEls.faces) dnEls.faces.disabled = dnEls.color.disabled = DN.busy;
+  const K = DN.kind ? COPY_KINDS[DN.kind] : null, k = K ? K.model : null, err = ['denoise', 'deblur', 'colorize'].map((m) => Hub.status(m)).find((st) => st.phase === 'error' && st.message);
+  const text = DN.busy ? (DN.msg || (k ? hubText(k, K.working + '…') : K.working + '…')) : err ? err.message
+    : 'AI Denoise, Fix motion blur and Colorize run on this device and need WebGPU. Each downloads its model the first time (59, 76 and 130 MB). Fix motion blur helps with shake and mild motion, not a fully smeared subject.';
   dnEls.status.textContent = text;
   Pill.set('denoise', DN.busy ? text : '');
 }
@@ -6634,7 +7007,7 @@ async function runTile(key, inp, T) {
   return d;
 }
 /* save pixels as a new photo next to the original, with the original's edits */
-async function addCopy(p, px, w, hgt, suffix, adjust) {
+async function addCopy(p, px, w, hgt, suffix, adjust, ai) {
   const blob = await new Promise((r) => rmCanvas(px, w, hgt).toBlob(r, 'image/jpeg', 0.95));
   if (!blob) throw new Error('The browser could not save the new copy.');
   const name = p.name.replace(/\.[^.]+$/, '') + suffix + '.jpg', file = new File([blob], name, { type: 'image/jpeg' });
@@ -6642,6 +7015,7 @@ async function addCopy(p, px, w, hgt, suffix, adjust) {
   s.fills = []; s.masks = [];
   if (adjust) adjust(s);
   q.settings = s;
+  q.ai = p.ai === 'generated' ? 'generated' : ai || p.ai || ((p.settings.fills || []).length ? 'composite' : null);
   q.order = Library.nextOrder();
   state.photos.push(q);
   Library.storeFile(q);
@@ -6651,6 +7025,68 @@ async function addCopy(p, px, w, hgt, suffix, adjust) {
   makeFileThumb(q);
   return name;
 }
+/* sRGB to linear light and back, for Lab */
+const LIN8 = (() => { const t = new Float32Array(256); for (let i = 0; i < 256; i++) { const c = i / 255; t[i] = c <= 0.04045 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); } return t; })();
+let SRGB4K = null;
+function toSrgb(v) {
+  if (!SRGB4K) { SRGB4K = new Uint8Array(4097); for (let i = 0; i <= 4096; i++) { const c = i / 4096; SRGB4K[i] = Math.round((c <= 0.0031308 ? c * 12.92 : 1.055 * Math.pow(c, 1 / 2.4) - 0.055) * 255); } }
+  return SRGB4K[v <= 0 ? 0 : v >= 1 ? 4096 : Math.round(v * 4096)];
+}
+/* DDColor sees the photo's lightness as gray RGB at 512 and returns the a and b of CIE Lab; the full-size lightness stays the photo's own */
+async function colorizePixels(src, w, hgt) {
+  const S5 = 512, N = S5 * S5, small = Engine.renderSmall(S5, S5, [1, 0, 0, 1, 0, 0], { bypass: true, pre: true }), inp = new Float32Array(3 * N);
+  for (let i = 0; i < N; i++) {
+    const Y = 0.212671 * LIN8[small[i * 4]] + 0.71516 * LIN8[small[i * 4 + 1]] + 0.072169 * LIN8[small[i * 4 + 2]], g = toSrgb(Y) / 255;
+    inp[i] = g; inp[N + i] = g; inp[2 * N + i] = g;
+  }
+  const { out, sess } = await Hub.run('colorize', (sn) => ({ [sn.inputNames[0]]: new ort.Tensor('float32', inp, [1, 3, S5, S5]) }));
+  const t = out[sess.outputNames[0]], ab = await tensorData(t), dims = t.dims || [1, 2, S5, S5];
+  Hub.release('colorize');
+  const oh = dims[dims.length - 2], ow = dims[dims.length - 1], M = ow * oh;
+  if (ab.length < 2 * M) throw new Error('The colorize model sent back the wrong size.');
+  const res = new Uint8ClampedArray(w * hgt * 4), f = (v) => (v > 0.008856 ? Math.cbrt(v) : 7.787 * v + 16 / 116), fi = (v) => (v > 0.206893 ? v * v * v : (v - 16 / 116) / 7.787);
+  let shown = performance.now();
+  for (let y = 0; y < hgt; y++) {
+    const sy = Math.min(oh - 1, Math.max(0, ((y + 0.5) * oh) / hgt - 0.5)), y0 = Math.floor(sy), y1 = Math.min(oh - 1, y0 + 1), wy = sy - y0;
+    for (let x = 0; x < w; x++) {
+      const sx = Math.min(ow - 1, Math.max(0, ((x + 0.5) * ow) / w - 0.5)), x0 = Math.floor(sx), x1 = Math.min(ow - 1, x0 + 1), wx = sx - x0;
+      const i00 = y0 * ow + x0, i01 = y0 * ow + x1, i10 = y1 * ow + x0, i11 = y1 * ow + x1;
+      const a = (ab[i00] * (1 - wx) + ab[i01] * wx) * (1 - wy) + (ab[i10] * (1 - wx) + ab[i11] * wx) * wy;
+      const b = (ab[M + i00] * (1 - wx) + ab[M + i01] * wx) * (1 - wy) + (ab[M + i10] * (1 - wx) + ab[M + i11] * wx) * wy;
+      const o = (y * w + x) * 4, Y = 0.212671 * LIN8[src[o]] + 0.71516 * LIN8[src[o + 1]] + 0.072169 * LIN8[src[o + 2]], fy = f(Y);
+      const X = 0.950456 * fi(fy + a / 500), Z = 1.088754 * fi(fy - b / 200);
+      res[o] = toSrgb(3.240479 * X - 1.53715 * Y - 0.498535 * Z);
+      res[o + 1] = toSrgb(-0.969256 * X + 1.875991 * Y + 0.041556 * Z);
+      res[o + 2] = toSrgb(0.055648 * X - 0.204043 * Y + 1.057311 * Z);
+      res[o + 3] = 255;
+    }
+    if (performance.now() - shown > 150) { shown = performance.now(); DN.msg = 'Adding color: ' + Math.round((y / hgt) * 100) + '%'; syncDenoise(); await new Promise((r) => setTimeout(r, 0)); }
+  }
+  return res;
+}
+/* GFPGAN or RestoreFormer, whichever IOPaint was started with; it finds the faces, repairs them and pastes them back at full size */
+async function facePixels(src, w, hgt) {
+  const base = ((genEls.iop && genEls.iop.value.trim()) || pref('safelight.iopaint', 'http://127.0.0.1:8080')).replace(/\/+$/, '');
+  const off = () => new Error('Fix faces runs GFPGAN inside IOPaint on your Mac, and IOPaint is not reachable at ' + base + '. Start it with --enable-gfpgan --gfpgan-device cpu added.');
+  let cfg = null;
+  try { const r = await fetch(base + '/api/v1/server-config'); if (r.ok) cfg = await r.json(); } catch (e) { throw off(); }
+  const list = ((cfg && cfg.plugins) || []).map((x) => (typeof x === 'string' ? x : x && x.name)).filter(Boolean);
+  const name = cfg ? ['GFPGAN', 'RestoreFormer'].find((n) => list.includes(n)) : 'GFPGAN';
+  if (!name) throw new Error('IOPaint is running without a face model. Restart it with --enable-gfpgan --gfpgan-device cpu added.');
+  DN.msg = 'Fixing faces with ' + name + ' on your Mac…';
+  syncDenoise();
+  let r;
+  try { r = await fetch(base + '/api/v1/run_plugin_gen_image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, image: toDataURL(src, w, hgt, 'image/jpeg', 0.95), scale: 1 }) }); }
+  catch (e) { throw off(); }
+  if (!r.ok) {
+    let d = '';
+    try { d = (await r.text()).slice(0, 200); } catch (e) { /* no body */ }
+    throw new Error('IOPaint returned an error (' + r.status + ')' + (d ? ': ' + d : '.'));
+  }
+  DN.msg = 'Reading the result…';
+  syncDenoise();
+  return blobToRGBA(await r.blob(), w, hgt);
+}
 async function aiCopy(kind) {
   const p = state.cur, K = COPY_KINDS[kind];
   if (!p || !p.history || DN.busy) return;
@@ -6659,6 +7095,15 @@ async function aiCopy(kind) {
   try {
     if (Fills.sync()) sourceChanged();
     const w = p.w, hgt = p.h, src = Engine.renderSmall(w, hgt, [1, 0, 0, 1, 0, 0], { bypass: true, pre: true });
+    if (kind === 'colorize' || kind === 'faces') {
+      const fixed = kind === 'colorize' ? await colorizePixels(src, w, hgt) : await facePixels(src, w, hgt);
+      DN.msg = 'Saving the copy…';
+      syncDenoise();
+      const masks = p.settings.masks.length;
+      const name = await addCopy(p, fixed, w, hgt, K.suffix, kind === 'colorize' ? (st) => { st.bw = false; if (st.v.saturation < -60) st.v.saturation = 0; } : null, K.ai);
+      toast('Saved a ' + K.done + ' copy: ' + name + (masks ? '. Masks stay with the original.' : ''), 4200);
+      return;
+    }
     const T = 256, Pd = 16, core = T - 2 * Pd, N = T * T, inp = new Float32Array(3 * N), out = new Uint8ClampedArray(w * hgt * 4);
     const tilesX = Math.ceil(w / core), tilesY = Math.ceil(hgt / core), total = tilesX * tilesY;
     await Hub.session(K.model);
@@ -6700,13 +7145,29 @@ async function aiCopy(kind) {
 }
 
 /* ---------- quick actions in Generative edit: some pick their own area first ---------- */
+const RELIGHT_LOOKS = [['golden', 'Golden hour', 'warm golden-hour sunlight'], ['studio', 'Soft studio', 'soft, even studio light from a large softbox'],
+  ['overcast', 'Overcast', 'soft, diffused overcast daylight'], ['dramatic', 'Dramatic', 'hard, dramatic light with deep shadows'],
+  ['arena', 'Bright arena', 'clean, bright indoor arena lighting'], ['neon', 'Neon', 'colorful magenta and cyan neon light'], ['moon', 'Moonlight', 'cool blue moonlight']];
+const RELIGHT_DIRS = [['left', 'From the left', 'coming from the left'], ['right', 'From the right', 'coming from the right'], ['front', 'From the front', 'coming from the front'],
+  ['behind', 'From behind', 'coming from behind as a rim light'], ['above', 'From above', 'coming from above']];
+function relightPrompt(look, dir) {
+  const L = RELIGHT_LOOKS.find((x) => x[0] === look) || RELIGHT_LOOKS[0], D = RELIGHT_DIRS.find((x) => x[0] === dir) || RELIGHT_DIRS[0];
+  return 'Relight the photo with ' + L[2] + ' ' + D[2] + '. Add matching highlights, shadows and color on the people and the background. Keep the people, their faces and poses, and everything else the same.';
+}
+async function saveMfluxHelper() {
+  const blob = new Blob([MFLUX_HELPER], { type: 'text/x-python' });
+  try {
+    const dl = await getDownloads();
+    if (dl) await dl.save({ filename: 'safelight-mflux.py', data: blob });
+    else await saveLocal(blob, 'safelight-mflux.py', true);
+  } catch (e) { if (!e || e.code !== 'declined') toast('The helper could not be saved.'); }
+}
+const MFLUX_HELPER = "#!/usr/bin/env python3\n\"\"\"Safelight helper: lets Safelight edit photos with FLUX.2 klein 4B on your Mac, for free.\n\nSafelight runs in your browser, and a browser cannot run a big image model by itself.\nThis small program is the bridge: Safelight sends it the photo and your prompt, it runs\nmflux (the FLUX.2 model for Apple Silicon), and sends the edited picture back.\n\nOnce:\n  curl -LsSf https://astral.sh/uv/install.sh | sh     (then close and reopen Terminal)\n  uv tool install mflux\nEach time you edit:\n  python3 ~/Downloads/safelight-mflux.py              (leave the window open)\nThen in Safelight: Generative edit > Engine > Free on your Mac: FLUX.2 klein.\n\nSettings (optional, as environment variables):\n  SAFELIGHT_MFLUX_PORT   port to listen on, default 8090\n  SAFELIGHT_MFLUX_MODEL  mflux model name, default flux2-klein-4b\n  SAFELIGHT_MFLUX_Q      quantization bits, 8 (default) or 4 for less memory\n  SAFELIGHT_MFLUX_STEPS  steps, default 4\n\"\"\"\nimport base64\nimport json\nimport os\nimport random\nimport shutil\nimport struct\nimport subprocess\nimport sys\nimport tempfile\nimport threading\nfrom http.server import BaseHTTPRequestHandler, ThreadingHTTPServer\n\nPORT = int(os.environ.get(\"SAFELIGHT_MFLUX_PORT\", \"8090\"))\nMODEL = os.environ.get(\"SAFELIGHT_MFLUX_MODEL\", \"flux2-klein-4b\")\nQUANT = os.environ.get(\"SAFELIGHT_MFLUX_Q\", \"8\")\nSTEPS = os.environ.get(\"SAFELIGHT_MFLUX_STEPS\", \"4\")\nMAX_BODY = 80 * 1024 * 1024\nLOCK = threading.Lock()\n\n\ndef find_cli():\n    path = shutil.which(\"mflux-generate-flux2-edit\")\n    if path:\n        return path\n    for cand in (\"~/.local/bin/mflux-generate-flux2-edit\", \"/opt/homebrew/bin/mflux-generate-flux2-edit\"):\n        cand = os.path.expanduser(cand)\n        if os.path.exists(cand):\n            return cand\n    return None\n\n\ndef save_data_url(text, path):\n    if text.startswith(\"data:\") and \",\" in text:\n        text = text.split(\",\", 1)[1]\n    with open(path, \"wb\") as f:\n        f.write(base64.b64decode(text))\n\n\ndef image_size(path):\n    \"\"\"Width and height of a PNG or JPEG, read from its header.\"\"\"\n    with open(path, \"rb\") as f:\n        head = f.read(26)\n        if head[:8] == b\"\\x89PNG\\r\\n\\x1a\\n\":\n            return struct.unpack(\">II\", head[16:24])\n        if head[:2] != b\"\\xff\\xd8\":\n            return None\n        f.seek(2)\n        while True:\n            b = f.read(1)\n            while b and b != b\"\\xff\":\n                b = f.read(1)\n            while b == b\"\\xff\":\n                b = f.read(1)\n            if not b:\n                return None\n            marker = b[0]\n            if marker in (0xD8, 0x01) or 0xD0 <= marker <= 0xD7:\n                continue\n            seg = f.read(2)\n            if len(seg) < 2:\n                return None\n            length = struct.unpack(\">H\", seg)[0]\n            if marker in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):\n                data = f.read(5)\n                h, w = struct.unpack(\">HH\", data[1:5])\n                return w, h\n            f.seek(length - 2, 1)\n\n\ndef round16(v):\n    return max(256, min(2048, int(round(v / 16.0)) * 16))\n\n\ndef run_edit(prompt, images, seed):\n    cli = find_cli()\n    if not cli:\n        raise RuntimeError(\"mflux is not installed yet. In Terminal, run: uv tool install mflux\")\n    work = tempfile.mkdtemp(prefix=\"safelight-\")\n    try:\n        paths = []\n        for i, img in enumerate(images[:3]):\n            p = os.path.join(work, \"in%d.img\" % i)\n            save_data_url(img, p)\n            paths.append(p)\n        size = image_size(paths[0]) or (1024, 1024)\n        w, h = round16(size[0]), round16(size[1])\n        out = os.path.join(work, \"out.png\")\n        base = [cli, \"--model\", MODEL, \"--image-paths\", *paths, \"--prompt\", prompt,\n                \"--steps\", str(STEPS), \"-q\", str(QUANT), \"--seed\", str(seed), \"--output\", out]\n        tries = [base + [\"--width\", str(w), \"--height\", str(h)], base]\n        last = \"\"\n        for cmd in tries:\n            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=3600)\n            if proc.returncode == 0 and os.path.exists(out):\n                with open(out, \"rb\") as f:\n                    return f.read()\n            last = (proc.stderr or proc.stdout or \"\").strip().splitlines()[-1:] or [\"mflux stopped\"]\n            last = last[0]\n            if \"unrecognized arguments\" not in (proc.stderr or \"\"):\n                break\n        raise RuntimeError(\"mflux failed: \" + last[:300])\n    finally:\n        shutil.rmtree(work, ignore_errors=True)\n\n\nclass Handler(BaseHTTPRequestHandler):\n    server_version = \"SafelightMflux/1.0\"\n\n    def cors(self):\n        self.send_header(\"Access-Control-Allow-Origin\", \"*\")\n        self.send_header(\"Access-Control-Allow-Methods\", \"GET, POST, OPTIONS\")\n        self.send_header(\"Access-Control-Allow-Headers\", \"Content-Type\")\n        self.send_header(\"Access-Control-Allow-Private-Network\", \"true\")\n\n    def reply(self, code, body, ctype=\"application/json\"):\n        if isinstance(body, (dict, list)):\n            body = json.dumps(body).encode()\n        elif isinstance(body, str):\n            body = body.encode()\n        self.send_response(code)\n        self.cors()\n        self.send_header(\"Content-Type\", ctype)\n        self.send_header(\"Content-Length\", str(len(body)))\n        self.end_headers()\n        self.wfile.write(body)\n\n    def do_OPTIONS(self):\n        self.send_response(204)\n        self.cors()\n        self.send_header(\"Content-Length\", \"0\")\n        self.end_headers()\n\n    def do_GET(self):\n        if self.path.split(\"?\")[0] in (\"/\", \"/health\"):\n            self.reply(200, {\"ok\": True, \"mflux\": bool(find_cli()), \"model\": MODEL, \"busy\": LOCK.locked()})\n        else:\n            self.reply(404, {\"error\": \"Not found\"})\n\n    def do_POST(self):\n        if self.path.split(\"?\")[0] != \"/edit\":\n            self.reply(404, {\"error\": \"Not found\"})\n            return\n        try:\n            n = int(self.headers.get(\"Content-Length\") or 0)\n            if n <= 0 or n > MAX_BODY:\n                self.reply(413, {\"error\": \"The request is empty or too large.\"})\n                return\n            req = json.loads(self.rfile.read(n))\n            prompt = str(req.get(\"prompt\") or \"\").strip()\n            images = [x for x in (req.get(\"images\") or []) if isinstance(x, str) and x]\n            if not prompt or not images:\n                self.reply(400, {\"error\": \"Send a prompt and at least one image.\"})\n                return\n            seed = int(req.get(\"seed\") or random.randint(1, 2 ** 31 - 1))\n        except (ValueError, TypeError) as e:\n            self.reply(400, {\"error\": \"Bad request: %s\" % e})\n            return\n        with LOCK:\n            try:\n                png = run_edit(prompt, images, seed)\n            except subprocess.TimeoutExpired:\n                self.reply(504, {\"error\": \"mflux took too long.\"})\n                return\n            except Exception as e:  # report every failure to Safelight\n                self.reply(500, {\"error\": str(e)})\n                return\n        self.reply(200, png, \"image/png\")\n\n    def log_message(self, fmt, *args):\n        sys.stderr.write(\"[safelight] \" + (fmt % args) + \"\\n\")\n\n\ndef main():\n    cli = find_cli()\n    print(\"Safelight FLUX.2 helper on http://127.0.0.1:%d (model %s, %s-bit)\" % (PORT, MODEL, QUANT))\n    if not cli:\n        print(\"mflux is not installed yet. In a new Terminal window, run: uv tool install mflux\")\n    else:\n        print(\"mflux found. In Safelight, pick Engine: Free on your Mac, press Check, then Generate.\")\n    print(\"Leave this window open while you edit. The first edit downloads the model, several GB.\")\n    print(\"Press Control-C to stop.\")\n    ThreadingHTTPServer((\"127.0.0.1\", PORT), Handler).serve_forever()\n\n\nif __name__ == \"__main__\":\n    try:\n        main()\n    except KeyboardInterrupt:\n        print(\"\\nStopped.\")\n";
 const GEN_CHIPS = [
   ['Remove the motion blur and make everything sharp', null],
   ['Fix the hands', null],
-  ['Make the shoes match image 2', null],
   ['Replace the background with a clean, softly lit gym', 'background'],
   ['Replace the sky with a dramatic sunset', 'sky'],
-  ['Match the subject’s light and color to the scene', 'subject'],
   ['Remove the people in the background', 'background'],
 ];
 async function genUseArea(kind) {
@@ -6753,7 +7214,7 @@ async function generateImage() {
     const blob = await falEdit({ model: t2iEls.model.value, prompt, images: [], token, signal: ctl.signal, onStatus: say, extra: { image_size: { width: W, height: H } } });
     say('Adding it to your library…');
     const name = 'generated-' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.png';
-    const file = new File([blob], name, { type: blob.type || 'image/png' }), q = newPhoto({ kind: 'file', name, file });
+    const file = new File([blob], name, { type: blob.type || 'image/png' }), q = newPhoto({ kind: 'file', name, file, ai: 'generated' });
     q.order = Library.nextOrder();
     state.photos.push(q);
     Library.storeFile(q);
@@ -6788,7 +7249,7 @@ function buildExpandPanel() {
     h('div', { class: 'field gen-field' }, h('span', { text: 'Shape' }), target),
     h('div', { class: 'row' }, prompt),
     h('div', { class: 'btn-row' }, go, stop), status,
-    hint('Saves a new, larger photo and leaves this one as it is. It uses the Hugging Face token from Generative edit.'));
+    hint('Saves a new, larger photo and leaves this one as it is. It uses the free engine you picked in Generative edit.'));
 }
 function syncExpand(msg) {
   if (!xpEls.go) return;
@@ -6864,7 +7325,7 @@ async function expandPhoto() {
       }
     }
     syncExpand('Saving the new photo…');
-    const name = await addCopy(p, out, W, H, '-expanded', (s) => { s.geom = Object.assign(defaultSettings().geom, { rot: g.rot, fh: g.fh, fv: g.fv }); s.spots = []; });
+    const name = await addCopy(p, out, W, H, '-expanded', (s) => { s.geom = Object.assign(defaultSettings().geom, { rot: g.rot, fh: g.fh, fv: g.fv }); s.spots = []; }, 'composite');
     syncExpand('Saved ' + name + '. The original is unchanged.');
   } catch (err) {
     if (err && err.name === 'AbortError') syncExpand('Stopped.');
@@ -6876,15 +7337,27 @@ async function expandPhoto() {
 }
 
 /* ---------- engines for Generative edit and expand ---------- */
-const ENGINES = [['hf', 'Hugging Face providers (paid, fastest)'], ['space', 'Free Hugging Face Space (daily GPU minutes)'], ['iopaint', 'IOPaint on your Mac (free)']];
+const ENGINES = [['space', 'Free online: Hugging Face Space'], ['mflux', 'Free on your Mac: FLUX.2 klein']];
 function pref(k, d) { try { return localStorage.getItem(k) || d; } catch (e) { return d; } }
 function setPref(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* private mode */ } }
 function syncEngine() {
   if (!genEls.engine) return;
   const e = genEls.engine.value;
-  genEls.modelRow.hidden = e !== 'hf';
   genEls.spaceRow.hidden = e !== 'space';
-  genEls.iopRow.hidden = e !== 'iopaint';
+  if (genEls.mfluxRow) genEls.mfluxRow.hidden = e !== 'mflux';
+  if (e === 'mflux') mfluxCheck();
+  syncGen();
+}
+/* is the Mac helper running, and is mflux installed? */
+async function mfluxCheck() {
+  const el = genEls.mfluxStatus;
+  if (!el) return;
+  const base = ((genEls.mflux && genEls.mflux.value.trim()) || 'http://127.0.0.1:8090').replace(/\/+$/, '');
+  el.textContent = 'Checking for the helper…';
+  try {
+    const r = await fetch(base + '/health', { cache: 'no-store' }), j = r.ok ? await r.json() : null;
+    el.textContent = !j ? 'The helper answered with an error. Restart it in Terminal.' : j.mflux ? 'Connected. The helper is running and mflux is installed, so Generate will work.' : 'The helper is running, but mflux is not installed yet. Do step 1.';
+  } catch (e) { el.textContent = 'Not connected yet. Do step 3, then press Check again.'; }
 }
 /* the Area mask at the crop's size, white where it should repaint */
 function areaMaskURL(area, cw, ch, p) {
@@ -6981,12 +7454,24 @@ async function iopaintEdit({ base, image, mask, prompt, refs, signal, onStatus }
   onStatus('Reading the result…');
   return r.blob();
 }
-async function editEngine({ prompt, images, mask, signal, onStatus }) {
-  const e = genEls.engine ? genEls.engine.value : 'hf', token = hfToken();
-  if (e === 'iopaint') return iopaintEdit({ base: genEls.iop.value.trim() || 'http://127.0.0.1:8080', image: images[0], mask, prompt, refs: images.slice(1), signal, onStatus });
-  if (e === 'space') return spaceEdit({ space: genEls.space.value.trim() || 'Qwen/Qwen-Image-Edit', prompt, images, token, signal, onStatus });
-  if (!token) throw new Error('Paste your Hugging Face token in Generative edit first.');
-  return falEdit({ model: genEls.model.value, prompt, images, token, signal, onStatus });
+async function mfluxEdit({ base, prompt, images, signal, onStatus }) {
+  onStatus('Sending to FLUX.2 klein on your Mac. The first edit downloads the model, so it can take a while…');
+  let r;
+  try { r = await fetch(base.replace(/\/+$/, '') + '/edit', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ prompt, images }), signal }); }
+  catch (e) { if (signal && signal.aborted) throw e; throw new Error('The FLUX.2 helper is not reachable at ' + base + '. Start it in Terminal first.'); }
+  if (!r.ok) {
+    let d = '';
+    try { const t = await r.text(); try { d = JSON.parse(t).error || t; } catch (e) { d = t; } } catch (e) { /* no body */ }
+    throw new Error('The FLUX.2 helper returned an error (' + r.status + ')' + (d ? ': ' + String(d).slice(0, 220) : '.'));
+  }
+  onStatus('Reading the result…');
+  return r.blob();
+}
+async function editEngine({ prompt, images, mask, signal, onStatus, raw }) {
+  const e = genEls.engine ? genEls.engine.value : 'space';
+  if (e === 'mflux') { Gen.lastLabel = 'FLUX.2 klein on your Mac'; return mfluxEdit({ base: (genEls.mflux && genEls.mflux.value.trim()) || 'http://127.0.0.1:8090', prompt, images, signal, onStatus }); }
+  Gen.lastLabel = 'the free Space';
+  return spaceEdit({ space: genEls.space.value.trim() || 'Qwen/Qwen-Image-Edit', prompt, images, token: hfToken(), signal, onStatus });
 }
 
 /* ---------- auto straighten/* ---------- auto straighten: find the dominant near-level and near-vertical edges ---------- */
@@ -7387,6 +7872,8 @@ function photoFromRecord(r) {
   p.id = r.id;
   p.settings = mergeSettings(r.settings);
   p.depthId = r.depth || null;
+  p.ai = r.ai || null;
+  p.depthModel = r.depthModel || null;
   if (r.auto) p.pendingPreset = r.auto;
   if (Array.isArray(r.history) && r.history.length) {
     p.history = r.history.map((e) => { const s = mergeSettings(JSON.parse(e.json)); return { label: e.label, key: e.key, t: e.t, s, json: JSON.stringify(s) }; });
